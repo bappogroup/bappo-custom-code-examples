@@ -2,6 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { styled, View, Button, Text, ActivityIndicator } from 'bappo-components';
 import EntryDetails from './EntryDetails';
+import { timesheetEntryFormConfig } from './utils';
 
 class JobRows extends React.Component {
   state = {
@@ -85,11 +86,6 @@ class JobRows extends React.Component {
     })
   }
 
-  createEntry = async (data) => {
-    await this.props.$models.TimesheetEntry.create(data);
-    this.fetchList();
-  }
-
   handleClickCell = (id, dayOfWeek, jobId) => {
     if (id) {
       // select an entry
@@ -99,15 +95,20 @@ class JobRows extends React.Component {
       // add new entry
       const { timesheet, $popup } = this.props;
       const date = moment(timesheet.week).add(dayOfWeek - 1, 'day').format('YYYY-MM-DD');
+
       $popup.form({
-        formKey: 'TimesheetEntryForm',
+        ...timesheetEntryFormConfig,
         initialValues: {
           timesheet_id: timesheet.id,
           job_id: jobId,
           date,
         },
-        onSubmit: this.createEntry,
+        onSubmit: async (data) => {
+          await this.props.$models.TimesheetEntry.create(data);
+          this.fetchList();
+        },
       });
+
       this.setState({ selectedEntry: null });
     }
   }

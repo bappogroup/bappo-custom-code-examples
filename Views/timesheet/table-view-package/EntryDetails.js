@@ -1,6 +1,7 @@
 import React from 'react';
 import { styled, View, Text, Button } from 'bappo-components';
 import BorderButton from './components/BorderButton';
+import { timesheetEntryFormConfig } from './utils';
 
 const EntryDetails = ({
   entry,
@@ -20,7 +21,7 @@ const EntryDetails = ({
 
   const openEditForm = () => {
     $popup.form({
-      formKey: 'TimesheetEntryForm',
+      ...timesheetEntryFormConfig,
       initialValues: entry,
       onSubmit: updateEntry,
     });
