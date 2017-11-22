@@ -1,9 +1,9 @@
 import React from 'react';
-import { styled, View, Text, Button } from 'bappo-components';
+import { styled, View, Text, Button, DatePicker } from 'bappo-components';
 
 const TimesheetHeader = ({
   timesheet,
-  switchWeek,
+  changeWeek,
 }) => {
   if (!timesheet) return null;
 
@@ -12,12 +12,17 @@ const TimesheetHeader = ({
       <Title>
         {`${timesheet.consultant.name}'s Timesheet`}
       </Title>
-      <SwitchButton onPress={() => switchWeek(false)}>
+      <SwitchButton onPress={() => changeWeek(-1)}>
         <ButtonText>{'<'}</ButtonText>
       </SwitchButton>
-      <SwitchButton onPress={() => switchWeek(true)}>
+      <SwitchButton onPress={() => changeWeek(1)}>
         <ButtonText>{'>'}</ButtonText>
       </SwitchButton>
+      <DatePicker
+        placeholder="Jump"
+        onValueChange={date => changeWeek(null, date)}
+        clearable={false}
+      />
     </Container>
   );
 };
@@ -42,4 +47,8 @@ const SwitchButton = styled(Button)`
 const ButtonText = styled(Text)`
   font-size: 20px;
   color: grey;
+`;
+
+const StyledDatePicker = styled(DatePicker)`
+  margin-left: 15px;
 `;

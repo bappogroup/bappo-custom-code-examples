@@ -4,6 +4,7 @@ import BorderButton from './components/BorderButton';
 import { timesheetEntryFormConfig } from './utils';
 
 const EntryDetails = ({
+  consultant,
   entry,
   entryModel,
   fetchList,
@@ -22,6 +23,7 @@ const EntryDetails = ({
   const openEditForm = () => {
     $popup.form({
       ...timesheetEntryFormConfig,
+      title: `${entry.job.name}, ${entry.date}, ${consultant.name}`,
       initialValues: entry,
       onSubmit: updateEntry,
     });

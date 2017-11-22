@@ -93,11 +93,13 @@ class JobRows extends React.Component {
       this.setState({ selectedEntry });
     } else {
       // add new entry
-      const { timesheet, $popup } = this.props;
+      const { timesheet, $popup, consultant } = this.props;
       const date = moment(timesheet.week).add(dayOfWeek - 1, 'day').format('YYYY-MM-DD');
+      const job = this.state.jobs[jobId];
 
       $popup.form({
         ...timesheetEntryFormConfig,
+        title: `${job.name}, ${date}, ${consultant.name}`,
         initialValues: {
           timesheet_id: timesheet.id,
           job_id: jobId,
@@ -114,7 +116,7 @@ class JobRows extends React.Component {
   }
 
   handleAddJob = async () => {
-    const { $models, $popup } = this.props;
+    const { $models, $popup, consultant } = this.props;
     const { jobs } = this.state;
 
     // Fetch job assignments, and filter out already selected jobs
@@ -123,7 +125,7 @@ class JobRows extends React.Component {
         job_id: {
           $notIn: Object.keys(jobs),
         },
-        consultant_id: 1,
+        consultant_id: consultant.id,
       },
       include: [
         { as: 'job' }
@@ -272,7 +274,7 @@ class JobRows extends React.Component {
 
   render() {
     const { jobs, selectedEntry, loading } = this.state;
-    const { $popup, $models } = this.props;
+    const { $popup, $models, consultant } = this.props;
 
     if (loading) return <ActivityIndicator />;
 
@@ -286,6 +288,7 @@ class JobRows extends React.Component {
         {
           selectedEntry &&
             <EntryDetails
+              consultant={consultant}
               entry={selectedEntry}
               entryModel={$models.TimesheetEntry}
               fetchList={this.fetchList}

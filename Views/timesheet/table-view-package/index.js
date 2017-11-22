@@ -1,6 +1,6 @@
 import React from 'react';
 import moment from 'moment';
-import { styled, View } from 'bappo-components';
+import { styled, View, Text } from 'bappo-components';
 import TimesheetHeader from './TimesheetHeader';
 import RowHeader from './RowHeader';
 import JobRows from './JobRows';
@@ -9,11 +9,23 @@ import { getMonday } from './utils';
 class TableView extends React.Component {
   state = {
     timesheet: null,
+    consultant: null,
+    error: null,
   }
 
   async componentDidMount() {
-    const { $navigation, $models } = this.props;
+    const { $navigation, $models, $global } = this.props;
     const { recordId } = $navigation.state.params;
+    const { currentUser } = $global;
+
+    const consultant = await $models.Consultant.findOne({
+      where: {
+        user_id: currentUser.id
+      }
+    });
+
+    if (!consultant) return this.setState({ error: 'Consultant not found' });
+
     const timesheet = (await $models.Timesheet.findAll({
       where: {
         id: recordId,
@@ -26,15 +38,16 @@ class TableView extends React.Component {
     // Change day of a week to Monday if needed
     timesheet.week = getMonday(timesheet.week);
 
-    this.setState({ timesheet });
+    this.setState({ timesheet, consultant });
   }
 
-  switchWeek = async (isNext) => {
+  changeWeek = async (gapToNow, date) => {
     const { $navigation, $models } = this.props;
     const { timesheet } = this.state;
 
-    const weekGap = isNext ? 1 : -1;
-    const targetWeek = moment(getMonday(timesheet.week)).add(weekGap, 'week').format('YYYY-MM-DD');
+    const targetWeek = date ?
+      getMonday(date) :
+      moment(getMonday(timesheet.week)).add(gapToNow, 'week').format('YYYY-MM-DD');
 
     let targetTimesheet;
     let templateTimesheetId;
@@ -65,18 +78,21 @@ class TableView extends React.Component {
   }
 
   render() {
-    const { timesheet } = this.state;
+    const { timesheet, consultant, error } = this.state;
     if (!timesheet) return null;
+
+    if (error) return <Text>{error}</Text>;
 
     return (
       <Container>
         <TimesheetHeader
           timesheet={timesheet}
-          switchWeek={this.switchWeek}
+          changeWeek={this.changeWeek}
         />
         <RowHeader startDate={timesheet.week} />
         <JobRows
           timesheet={timesheet}
+          consultant={consultant}
           {...this.props}
         />
       </Container>

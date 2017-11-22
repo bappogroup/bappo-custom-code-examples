@@ -11,18 +11,18 @@ export const getMonday = (date) => {
 export const timesheetEntryFormConfig = {
   objectKey: 'TimesheetEntry',
   fields: [
-    {
-      path: 'timesheet_id',
-      readOnly: true,
-    },
-    {
-      path: 'job_id',
-      readOnly: true,
-    },
-    {
-      path: 'date',
-      readOnly: true,
-    },
+    // {
+    //   path: 'timesheet_id',
+    //   readOnly: true,
+    // },
+    // {
+    //   path: 'job_id',
+    //   readOnly: true,
+    // },
+    // {
+    //   path: 'date',
+    //   readOnly: true,
+    // },
     'hours',
     'notes',
   ],
