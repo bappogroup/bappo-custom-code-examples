@@ -11,7 +11,7 @@ const EntryDetails = ({
   $popup,
 }) => {
   const updateEntry = async (data) => {
-    await entryModel.update(data);
+    await entryModel.updateOne(data);
     fetchList();
   }
 
