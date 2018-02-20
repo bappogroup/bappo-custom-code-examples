@@ -18,9 +18,7 @@ const getInitials = ({ firstName, lastName, email }) => {
 
 const Avatar = ({ user }) => {
   return (
-    <Container
-      color={user.avatarColour}
-    >
+    <Container color={user.avatarColour}>
       <InitialText>{getInitials(user)}</InitialText>
     </Container>
   );

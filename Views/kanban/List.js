@@ -51,5 +51,4 @@ const ListTitle = styled(Text)`
   text-align: center;
 `;
 
-const StyledFlatList = styled(FlatList)`
-`;
+const StyledFlatList = styled(FlatList)``;

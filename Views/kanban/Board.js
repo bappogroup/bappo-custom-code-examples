@@ -17,13 +17,11 @@ class Board extends React.Component {
   fetchIssues = async () => {
     const { $models } = this.props;
     const issues = await $models.Issue.findAll({
-      include: [
-        { as: 'assignedTo' },
-      ],
+      include: [{ as: 'assignedTo' }],
     });
     const issuesById = {};
     const issuesByStatus = {};
-    issues.forEach((issue) => {
+    issues.forEach(issue => {
       issuesById[issue.id] = issue;
       if (!issuesByStatus[issue.status]) {
         issuesByStatus[issue.status] = [];
@@ -36,9 +34,9 @@ class Board extends React.Component {
     });
   };
 
-  changeSelectedIssueStatus = async (status) => {
+  changeSelectedIssueStatus = async status => {
     const { $models, $popup } = this.props;
-    await $models.Issue.update({
+    await $models.Issue.updateOne({
       id: this.state.selectedIssueId,
       status,
     });
@@ -46,13 +44,13 @@ class Board extends React.Component {
     await this.fetchIssues();
   };
 
-  createIssue = async (issue) => {
+  createIssue = async issue => {
     const { $models } = this.props;
     await $models.Issue.create(issue);
     await this.fetchIssues();
   };
 
-  updateIssue = async (issue) => {
+  updateIssue = async issue => {
     const { $models } = this.props;
     await $models.Issue.update(issue);
     await this.fetchIssues();
@@ -76,10 +74,22 @@ class Board extends React.Component {
     });
   };
 
+  openIssueDetailsPage = () => {
+    if (!this.state.selectedIssueId) return;
+    const { $navigation } = this.props;
+    $navigation.navigate('IssueDetailsPage', {
+      recordId: this.state.selectedIssueId,
+    });
+  };
+
   openWorkflowPopup = () => {
     const { $models, $popup } = this.props;
-    const statusField = $models.Issue.fields.find(field => field.name === 'status');
-    const statusNames = statusField.properties.options.map(({ label }) => label);
+    const statusField = $models.Issue.fields.find(
+      field => field.name === 'status',
+    );
+    const statusNames = statusField.properties.options.map(
+      ({ label }) => label,
+    );
     const selectedIssue = this.state.issuesById[this.state.selectedIssueId];
     $popup.open(
       <PopupContainer>
@@ -91,9 +101,7 @@ class Board extends React.Component {
               disabled={isSelected}
               onPress={() => this.changeSelectedIssueStatus(id)}
             >
-              <TickContainer>
-                {isSelected ? '✓' : ''}
-              </TickContainer>
+              <TickContainer>{isSelected ? '✓' : ''}</TickContainer>
               <PopupText>{label}</PopupText>
             </PopupRow>
           );
@@ -103,12 +111,12 @@ class Board extends React.Component {
         style: {
           height: 180,
           width: 150,
-        }
+        },
       },
     );
   };
 
-  selectIssue = (issue) => {
+  selectIssue = issue => {
     this.setState({
       selectedIssueId: issue.id,
     });
@@ -121,9 +129,11 @@ class Board extends React.Component {
     return (
       <BoardContainer>
         <MenuBar
+          detailsDisabled={!this.state.selectedIssueId}
           editDisabled={!this.state.selectedIssueId}
           openNewIssueForm={this.openNewIssueForm}
           openEditIssueForm={this.openEditIssueForm}
+          openIssueDetailsPage={this.openIssueDetailsPage}
           openWorkflowPopup={this.openWorkflowPopup}
         />
         <Grid>
@@ -155,8 +165,7 @@ const Grid = styled(View)`
   overflow: scroll;
 `;
 
-const PopupContainer = styled(View)`
-`;
+const PopupContainer = styled(View)``;
 
 const PopupRow = styled(Button)`
   align-items: center;
@@ -165,8 +174,7 @@ const PopupRow = styled(Button)`
   padding: 5px;
 `;
 
-const PopupText = styled(Text)`
-`;
+const PopupText = styled(Text)``;
 
 const TickContainer = styled(Text)`
   margin-right: 5px;

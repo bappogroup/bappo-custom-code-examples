@@ -2,37 +2,32 @@ import React from 'react';
 import { styled, Button, Text, View } from 'bappo-components';
 
 const MenuBar = ({
+  detailsDisabled,
   editDisabled,
   openNewIssueForm,
   openEditIssueForm,
+  openIssueDetailsPage,
   openWorkflowPopup,
 }) => {
   return (
     <Container>
       <MenuButtonContainer>
-        <MenuButton
-          onPress={openNewIssueForm}
-        >
+        <MenuButton onPress={openNewIssueForm}>
           <MenuButtonText>Add</MenuButtonText>
         </MenuButton>
       </MenuButtonContainer>
-      <MenuButtonContainer
-        disabled={editDisabled}
-      >
-        <MenuButton
-          disabled={editDisabled}
-          onPress={openEditIssueForm}
-        >
+      <MenuButtonContainer disabled={detailsDisabled}>
+        <MenuButton disabled={detailsDisabled} onPress={openIssueDetailsPage}>
+          <MenuButtonText>Details</MenuButtonText>
+        </MenuButton>
+      </MenuButtonContainer>
+      <MenuButtonContainer disabled={editDisabled}>
+        <MenuButton disabled={editDisabled} onPress={openEditIssueForm}>
           <MenuButtonText>Edit</MenuButtonText>
         </MenuButton>
       </MenuButtonContainer>
-      <MenuButtonContainer
-        disabled={editDisabled}
-      >
-        <MenuButton
-          disabled={editDisabled}
-          onPress={openWorkflowPopup}
-        >
+      <MenuButtonContainer disabled={editDisabled}>
+        <MenuButton disabled={editDisabled} onPress={openWorkflowPopup}>
           <MenuButtonText>Workflow</MenuButtonText>
         </MenuButton>
       </MenuButtonContainer>

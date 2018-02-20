@@ -7,20 +7,13 @@ class Card extends React.PureComponent {
     const { issue, onPress, selected } = this.props;
 
     return (
-      <Container
-        onPress={onPress}
-        selected={selected}
-      >
+      <Container onPress={onPress} selected={selected}>
         <Header>
-          <IssueNumberText>{issue.refNo}</IssueNumberText>
+          <IssueNumberText>{issue.referenceNumber}</IssueNumberText>
           <TitleText>{issue.name}</TitleText>
         </Header>
         <Footer>
-          {issue.assignedTo && (
-            <Avatar
-              user={issue.assignedTo}
-            />
-          )}
+          {issue.assignedTo && <Avatar user={issue.assignedTo} />}
         </Footer>
       </Container>
     );
@@ -37,7 +30,9 @@ const Container = styled(Button)`
   padding: 7px;
   width: 200px;
 
-  ${({ selected }) => selected && `
+  ${({ selected }) =>
+    selected &&
+    `
     background-color: #c5e597;
   `};
 `;
