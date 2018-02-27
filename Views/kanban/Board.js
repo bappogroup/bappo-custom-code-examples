@@ -15,9 +15,13 @@ class Board extends React.Component {
   }
 
   fetchIssues = async () => {
-    const { $models } = this.props;
+    const { $models, $navigation } = this.props;
+    const projectId =
+      $navigation.state.params && $navigation.state.params.recordId;
+    const where = projectId ? { project_id: projectId } : {};
     const issues = await $models.Issue.findAll({
       include: [{ as: 'assignedTo' }],
+      where,
     });
     const issuesById = {};
     const issuesByStatus = {};
