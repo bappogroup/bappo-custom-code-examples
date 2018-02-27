@@ -52,7 +52,7 @@ class Board extends React.Component {
 
   updateIssue = async issue => {
     const { $models } = this.props;
-    await $models.Issue.update(issue);
+    await $models.Issue.updateOne(issue);
     await this.fetchIssues();
   };
 
