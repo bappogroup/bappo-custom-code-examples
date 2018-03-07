@@ -114,7 +114,7 @@ class ForecastMatrix extends React.Component {
   };
 
   renderCell = (month, element) => {
-    const key = getKey(year, month, element.id);
+    const key = getKey(this.state.year, month, element.id);
     const entry = this.state.entries[key];
     if (!entry) return <Cell> ... </Cell>;
 
@@ -152,21 +152,6 @@ class ForecastMatrix extends React.Component {
     const rev_elements = [];
     const oh_elements = [];
 
-    for (const element of elements) {
-      switch (element.elementType) {
-        case 1:
-          cos_elements.push(element);
-          break;
-        case 2:
-          rev_elements.push(element);
-          break;
-        case 3:
-          oh_elements.push(element);
-          break;
-        default:
-      }
-    }
-
     const entries = {};
     for (let entry of entries_a) {
       const key = getEntryKey(entry);
@@ -174,6 +159,19 @@ class ForecastMatrix extends React.Component {
     }
 
     for (let element of elements) {
+      switch (element.elementType) {
+        case '1':
+          cos_elements.push(element);
+          break;
+        case '2':
+          rev_elements.push(element);
+          break;
+        case '3':
+          oh_elements.push(element);
+          break;
+        default:
+      }
+
       for (let month of months) {
         const key = getKey(year, month, element.id);
         entries[key] = entries[key] || newEntry(year, month, element);
