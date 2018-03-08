@@ -30,8 +30,8 @@ class ForecastMatrix extends React.Component {
     saving: false,
   };
 
-  async componentDidMount() {
-    await this.setFilters();
+  componentDidMount() {
+    this.setFilters();
   }
 
   // Bring up a popup asking which profit centre and time slot
