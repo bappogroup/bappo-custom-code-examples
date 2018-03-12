@@ -1,9 +1,14 @@
 import React from 'react';
 import { FlatList, View, Text, Button, styled } from 'bappo-components';
-import dates from './dates.js';
+import { datesToArray, datesToArrayByStart, datesEqual } from './dates.js';
 import moment from 'moment';
-const defaultFromDate = moment();
-const defaultToDate = moment().add(10, 'days');
+
+function truncString(str, max = 5, add = '...') {
+  add = add || '...';
+  return typeof str === 'string' && str.length > max
+    ? str.substring(0, max) + add
+    : str;
+}
 
 class Roster extends React.Component {
   state = {
@@ -11,9 +16,7 @@ class Roster extends React.Component {
     startDate: null,
     loading: true,
     consultants: [],
-    fromDate: defaultFromDate,
-    toDate: defaultToDate,
-    dates: dates(defaultFromDate, defaultToDate),
+    dates: datesToArrayByStart(moment()),
   };
 
   componentDidMount() {
@@ -33,7 +36,6 @@ class Roster extends React.Component {
       label: cc.name,
     }));
 
-    // TODO: type Date doesn't work!
     $popup.form({
       fields: [
         {
@@ -47,7 +49,8 @@ class Roster extends React.Component {
         {
           name: 'startDate',
           label: 'Start Date',
-          type: 'Text',
+          type: 'Date',
+          properties: {},
         },
       ],
       initialValues: {
@@ -56,9 +59,11 @@ class Roster extends React.Component {
       },
       onSubmit: async ({ costCenterId, startDate }) => {
         const costCenter = costCenters.find(cc => cc.id === costCenterId);
+        const dates = datesToArrayByStart(moment(startDate));
+
         await this.setState({
           costCenter,
-          startDate,
+          dates,
         });
         await this.loadData();
       },
@@ -69,7 +74,6 @@ class Roster extends React.Component {
     const { costCenter, startDate } = this.state;
     const { Consultant, RosterEntry, Probability } = this.props.$models;
 
-    //
     const consultants = await Consultant.findAll({
       limit: 10000,
       where: {
@@ -116,25 +120,60 @@ class Roster extends React.Component {
       backgroundColor = entry.probability.backgroundColor;
     }
 
+    let projectName = entry && entry.project && entry.project.name;
+
+    if (projectName) projectName = truncString(projectName);
+
     return (
       <Cell
         onPress={() => this.openEntryForm(entry)}
         backgroundColor={backgroundColor}
       >
-        <CellText>{entry && entry.project && entry.project.name}</CellText>
+        <CellText>{projectName}</CellText>
       </Cell>
     );
   };
 
-  renderConsultant = info => {
-    const consultant = info.item;
+  renderConsultantLabel = data => {
+    const { index, item } = data;
+    if (index === 0) return <HeaderLabel />;
+
     return (
-      <Row>
-        <ConsultantLabel>
-          <Text>{consultant.name}</Text>
-        </ConsultantLabel>
-        {this.state.dates.map(date => this.renderCell(consultant, date))}
-      </Row>
+      <Label>
+        <Text>{item.name}</Text>
+      </Label>
+    );
+  };
+
+  renderEntries = data => {
+    const { index, item } = data;
+
+    // Render date
+    if (index === 0) {
+      // Show month label at first date, or beginning of month
+      return (
+        <Row>
+          {this.state.dates.map((date, dateIndex) => {
+            let format = 'DD';
+            let color = 'black';
+            if (date.weekday() === 6 || date.weekday() === 0)
+              color = 'lightgray';
+            if (
+              dateIndex === 0 ||
+              datesEqual(date, date.clone().startOf('month'))
+            ) {
+              // Show month label
+              format = 'MMM DD';
+            }
+            return <HeaderCell color={color}>{date.format(format)}</HeaderCell>;
+          })}
+        </Row>
+      );
+    }
+
+    // Render normal entry
+    return (
+      <Row>{this.state.dates.map(date => this.renderCell(item, date))}</Row>
     );
   };
 
@@ -179,7 +218,7 @@ class Roster extends React.Component {
     let revenue = pa && pa.length > 0 ? pa[0].dayRate : 0;
     revenue = Math.floor(revenue);
 
-    const newEntries = dates(
+    const newEntries = datesToArray(
       moment(entry.startDate),
       moment(entry.endDate),
     ).map(d => {
@@ -208,7 +247,7 @@ class Roster extends React.Component {
   };
 
   render() {
-    const { loading, costCenter, startDate } = this.state;
+    const { loading, costCenter, startDate, consultants } = this.state;
     if (loading) {
       return (
         <View>
@@ -216,6 +255,8 @@ class Roster extends React.Component {
         </View>
       );
     }
+
+    const consultantsWithHeader = [{ id: 'header' }].concat(consultants);
 
     return (
       <Container>
@@ -225,16 +266,21 @@ class Roster extends React.Component {
           </Heading>
           <TextButton onPress={this.setFilters}>change</TextButton>
         </HeaderContainer>
-        <FlatList
-          windowSize={1}
-          data={this.state.consultants}
-          renderItem={this.renderConsultant}
-          getItemLayout={(_data, index) => ({
-            length: 34,
-            offset: 34 * index,
-            index,
-          })}
-        />
+        <ListContainer>
+          <ConsultantList
+            data={consultantsWithHeader}
+            renderItem={this.renderConsultantLabel}
+          />
+          <EntryList
+            data={consultantsWithHeader}
+            renderItem={this.renderEntries}
+            getItemLayout={(_data, index) => ({
+              length: 34,
+              offset: 34 * index,
+              index,
+            })}
+          />
+        </ListContainer>
       </Container>
     );
   }
@@ -242,7 +288,9 @@ class Roster extends React.Component {
 
 export default Roster;
 
-const Container = styled(View)``;
+const Container = styled(View)`
+  flex: 1;
+`;
 
 const HeaderContainer = styled(View)`
   flex-direction: row;
@@ -259,30 +307,66 @@ const TextButton = styled(Button)`
   color: grey;
 `;
 
+const ListContainer = styled(View)`
+  flex: 1;
+  flex-direction: row;
+  overflow-y: auto;
+`;
+
+const ConsultantList = styled(FlatList)`
+  width: 125px;
+  flex: none;
+  overflow: visible;
+`;
+
+const EntryList = styled(FlatList)`
+  flex: 1;
+  overflow-y: hidden;
+  overflow-x: scroll;
+`;
+
 const Row = styled(View)`
   flex-direction: row;
   height: 30px;
   margin: 2px;
 `;
 
-const Cell = styled(Button)`
+const labelStyle = `
+  flex: none;
+  width: 120px;
+  height: 30px;
+  margin: 1px;
+`;
+
+const HeaderLabel = styled(View)`
+  ${labelStyle};
+  margin: 2px;
+`;
+
+const Label = styled(View)`
+  ${labelStyle} justify-content: center;
+  align-items: center;
   border: 1px solid #eee;
   margin: 2px;
+`;
+
+const cellStyle = `
+  margin-left: 2px;
+  margin-right: 2px;
   width: 40px;
   height: 30px;
   justify-content: center;
   align-items: center;
-  background-color: ${props => props.backgroundColor};
 `;
 
-const ConsultantLabel = styled(View)`
-  flex: none;
-  width: 120px;
-  height: 30px;
-  justify-content: center;
-  align-items: center;
-  border: 1px solid #eee;
-  margin: 1px;
+const HeaderCell = styled(View)`
+  ${cellStyle};
+  color: ${props => props.color};
+`;
+
+const Cell = styled(Button)`
+  ${cellStyle} border: 1px solid #eee;
+  background-color: ${props => props.backgroundColor};
 `;
 
 const CellText = styled(Text)`
