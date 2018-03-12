@@ -1,6 +1,7 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import moment from 'moment';
+import { getSalaries, calculateServiceRevenue } from 'utils';
 import { getCurrentFinancialYear } from './utils';
 
 // Map to forecast entry financialMonth
@@ -26,12 +27,11 @@ class ForecastMatrix extends React.Component {
     financialYear: null,
     profitCentre: null,
     entries: {},
-    text: 'hello',
     saving: false,
   };
 
-  componentDidMount() {
-    this.setFilters();
+  async componentDidMount() {
+    await this.setFilters();
   }
 
   // Bring up a popup asking which profit centre and time slot
@@ -123,7 +123,6 @@ class ForecastMatrix extends React.Component {
           else rev_elements.push(element);
           break;
         }
-
         case '3':
           oh_elements.push(element);
           break;
@@ -136,7 +135,7 @@ class ForecastMatrix extends React.Component {
       }
     }
 
-    this.setState({
+    await this.setState({
       loading: false,
       entries,
       elements,
@@ -161,16 +160,6 @@ class ForecastMatrix extends React.Component {
     });
   };
 
-  selectionScreen = () => {
-    this.props.$popup.form({
-      objectKey: 'ForecastEntry',
-      fields: ['profitCentre_id'],
-      title: `Select a Profit Centre`,
-      initialValues: {},
-      onSubmit: this.updateRosterEntry,
-    });
-  };
-
   renderRow = element => {
     return (
       <Row>
@@ -187,7 +176,9 @@ class ForecastMatrix extends React.Component {
       <Row>
         <RowLabel>
           <span>{element.name}</span>
-          <TextButton onClick={() => this.calculateRow(element)}>
+          <TextButton
+            onClick={() => this.calculateServiceRevenueAndUpdate(element)}
+          >
             calculate
           </TextButton>
         </RowLabel>
@@ -212,61 +203,77 @@ class ForecastMatrix extends React.Component {
     );
   };
 
-  calculateRow = async element => {
+  calculateServiceRevenueAndUpdate = async element => {
     this.setState({ saving: true });
 
-    const { profitCentre, financialYear, entries } = this.state;
-    const { Project, RosterEntry } = this.props.$models;
+    const { profitCentre, financialYear } = this.state;
+    // calculate Service Revenue, update db and reload data
+    await calculateServiceRevenue(
+      this.props.$models,
+      financialYear,
+      profitCentre,
+    );
+
+    // const { Project, RosterEntry } = this.props.$models;
 
     // Find projects that belong to current profit centre
-    const projectIds = (await Project.findAll({
-      where: {
-        profitCentre_id: profitCentre.id,
-      },
-      limit: 1000,
-    })).map(p => p.id);
+    // const projectIds = (await Project.findAll({
+    //   where: {
+    //     profitCentre_id: profitCentre.id,
+    //   },
+    //   limit: 1000,
+    // })).map(p => p.id);
 
     // Fetch roster entries for the whole financial year, of this profit centre
-    const rosterEntries = await RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [
-            moment({
-              year: financialYear - 1,
-              month: 6,
-            }).toDate(),
-            moment({
-              year: financialYear,
-              month: 5,
-            }).toDate(),
-          ],
-        },
-        project_id: {
-          $in: projectIds,
-        },
-      },
-      limit: 10000,
-    });
+    // const rosterEntries = await RosterEntry.findAll({
+    //   where: {
+    //     date: {
+    //       $between: [
+    //         moment({
+    //           year: financialYear - 1,
+    //           month: 6,
+    //         }).toDate(),
+    //         moment({
+    //           year: financialYear,
+    //           month: 5,
+    //         }).toDate(),
+    //       ],
+    //     },
+    //     project_id: {
+    //       $in: projectIds,
+    //     },
+    //   },
+    //   limit: 100000,
+    // });
+
+    // Clear previously calculated values
+    // for (const month of months) {
+    //   const key = getKey(financialYear, month, element.id);
+    //   entries[key].amount = 0;
+    // }
 
     // Update this.state.entries
-    for (const entry of rosterEntries) {
-      // Convert calendar month to financial month number
-      let month = moment(entry.date).month() + 1 - 6;
-      if (month < 0) month += 12;
-      const key = getKey(financialYear, month, element.id);
+    // for (const entry of rosterEntries) {
+    //   // Convert calendar month to financial month number
+    //   let month = moment(entry.date).month() + 1 - 6;
+    //   if (month < 0) month += 12;
+    //   const key = getKey(financialYear, month, element.id);
 
-      // Calculate new revenue
-      const revenue = +entries[key].amount + +entry.revenue;
-      entries[key] = newEntry(financialYear, month, element, revenue);
-    }
+    //   // Calculate new revenue
+    //   const revenue = +entries[key].amount + +entry.revenue;
+    //   entries[key] = newEntry(financialYear, month, element, revenue);
+    // }
 
-    const totals = this.calcTotals(entries);
+    await this.loadData();
 
-    await this.setState({
-      entries,
-      totals,
+    // const totals = this.calcTotals(entries);
+
+    // const salaries = await getSalaries(this.props.$models , profitCentre.id);
+
+    await this.setState(state => ({
+      totals: this.calcTotals(state.entries),
       saving: false,
-    });
+    }));
   };
 
   calcTotals = entries => {
@@ -364,7 +371,7 @@ class ForecastMatrix extends React.Component {
     if (loading) {
       return <Loading>Loading...</Loading>;
     }
-
+    console.log(this.state.entries);
     return (
       <Container saving={saving}>
         <HeaderContainer>
