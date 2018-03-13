@@ -1,10 +1,9 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import moment from 'moment';
-import { getSalaries, calculateServiceRevenue } from 'utils';
+import { getSalaries, getForecastEntryKey, calculateForecast } from 'utils';
 import { getCurrentFinancialYear } from './utils';
 
-// Map to forecast entry financialMonth
 const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const monthLabels = [
   'Jul',
@@ -27,6 +26,7 @@ class ForecastMatrix extends React.Component {
     financialYear: null,
     profitCentre: null,
     entries: {},
+    costCenters: [],
     saving: false,
   };
 
@@ -85,7 +85,15 @@ class ForecastMatrix extends React.Component {
     const { financialYear, profitCentre } = this.state;
     if (!(financialYear && profitCentre)) return;
 
-    const { ForecastEntry, ForecastElement } = this.props.$models;
+    const { ForecastEntry, ForecastElement, CostCenter } = this.props.$models;
+
+    // Find all related cost centers
+    const costCenters = await CostCenter.findAll({
+      where: {
+        profitCentre_id: this.state.profitCentre.id,
+      },
+    });
+
     const entries_array = await ForecastEntry.findAll({
       include: [
         { as: 'profitCentre' },
@@ -102,6 +110,7 @@ class ForecastMatrix extends React.Component {
 
     const elements = await ForecastElement.findAll({});
     const cos_elements = [];
+    const cos_elements_calculated = [];
     const rev_elements = [];
     const rev_elements_calculated = [];
     const oh_elements = [];
@@ -115,11 +124,11 @@ class ForecastMatrix extends React.Component {
     for (let element of elements) {
       switch (element.elementType) {
         case '1':
-          cos_elements.push(element);
+          if (element.key === 'SAL') cos_elements_calculated.push(element);
+          else cos_elements.push(element);
           break;
         case '2': {
-          if (element.name === 'Service Revenue')
-            rev_elements_calculated.push(element);
+          if (element.key === 'TMREV') rev_elements_calculated.push(element);
           else rev_elements.push(element);
           break;
         }
@@ -129,8 +138,9 @@ class ForecastMatrix extends React.Component {
         default:
       }
 
+      // Create new entries for empty cells
       for (let month of months) {
-        const key = getKey(financialYear, month, element.id);
+        const key = getForecastEntryKey(financialYear, month, element.id);
         entries[key] = entries[key] || newEntry(financialYear, month, element);
       }
     }
@@ -138,8 +148,10 @@ class ForecastMatrix extends React.Component {
     await this.setState({
       loading: false,
       entries,
+      costCenters,
       elements,
       cos_elements,
+      cos_elements_calculated,
       rev_elements,
       rev_elements_calculated,
       oh_elements,
@@ -171,24 +183,52 @@ class ForecastMatrix extends React.Component {
     );
   };
 
+  // Render a row of calculated value, e.g. Service Revenue
   renderCalculatedRow = element => {
     return (
       <Row>
         <RowLabel>
           <span>{element.name}</span>
-          <TextButton
-            onClick={() => this.calculateServiceRevenueAndUpdate(element)}
-          >
-            calculate
-          </TextButton>
         </RowLabel>
         {months.map(month => this.renderCell(month, element, true))}
       </Row>
     );
   };
 
+  // Render a row of consolidated values, e.g. Consultant Salaries, which combines all cost centers
+  renderConsultantSalariesRow = element => {
+    const { financialYear, costCenters, entries } = this.state;
+
+    return (
+      <Row>
+        <RowLabel>
+          <span>{element.name}</span>
+        </RowLabel>
+        {months.map(month => {
+          let sum = 0;
+          for (const costCenter of costCenters) {
+            const key = getForecastEntryKey(
+              financialYear,
+              month,
+              element.id,
+              costCenter.id,
+            );
+            const entry = entries[key];
+            if (entry) sum += +entry.amount;
+          }
+
+          return <Cell>{sum}</Cell>;
+        })}
+      </Row>
+    );
+  };
+
   renderCell = (month, element, disabled = false) => {
-    const key = getKey(this.state.financialYear, month, element.id);
+    const key = getForecastEntryKey(
+      this.state.financialYear,
+      month,
+      element.id,
+    );
     const entry = this.state.entries[key];
     if (!entry) return <Cell> ... </Cell>;
 
@@ -203,72 +243,19 @@ class ForecastMatrix extends React.Component {
     );
   };
 
-  calculateServiceRevenueAndUpdate = async element => {
+  // Calculate all rows that need to, update db, reload data and calculate total
+  calculateRows = async () => {
     this.setState({ saving: true });
 
     const { profitCentre, financialYear } = this.state;
-    // calculate Service Revenue, update db and reload data
-    await calculateServiceRevenue(
-      this.props.$models,
+
+    await await calculateForecast({
+      $models: this.props.$models,
       financialYear,
-      profitCentre,
-    );
-
-    // const { Project, RosterEntry } = this.props.$models;
-
-    // Find projects that belong to current profit centre
-    // const projectIds = (await Project.findAll({
-    //   where: {
-    //     profitCentre_id: profitCentre.id,
-    //   },
-    //   limit: 1000,
-    // })).map(p => p.id);
-
-    // Fetch roster entries for the whole financial year, of this profit centre
-    // const rosterEntries = await RosterEntry.findAll({
-    //   where: {
-    //     date: {
-    //       $between: [
-    //         moment({
-    //           year: financialYear - 1,
-    //           month: 6,
-    //         }).toDate(),
-    //         moment({
-    //           year: financialYear,
-    //           month: 5,
-    //         }).toDate(),
-    //       ],
-    //     },
-    //     project_id: {
-    //       $in: projectIds,
-    //     },
-    //   },
-    //   limit: 100000,
-    // });
-
-    // Clear previously calculated values
-    // for (const month of months) {
-    //   const key = getKey(financialYear, month, element.id);
-    //   entries[key].amount = 0;
-    // }
-
-    // Update this.state.entries
-    // for (const entry of rosterEntries) {
-    //   // Convert calendar month to financial month number
-    //   let month = moment(entry.date).month() + 1 - 6;
-    //   if (month < 0) month += 12;
-    //   const key = getKey(financialYear, month, element.id);
-
-    //   // Calculate new revenue
-    //   const revenue = +entries[key].amount + +entry.revenue;
-    //   entries[key] = newEntry(financialYear, month, element, revenue);
-    // }
+      profitCentreIds: [profitCentre.id],
+    });
 
     await this.loadData();
-
-    // const totals = this.calcTotals(entries);
-
-    // const salaries = await getSalaries(this.props.$models , profitCentre.id);
 
     await this.setState(state => ({
       totals: this.calcTotals(state.entries),
@@ -311,6 +298,7 @@ class ForecastMatrix extends React.Component {
   renderTotal = (month, key) => (
     <TotalCell>{this.state.totals[key][month]}</TotalCell>
   );
+
   renderTotals = (key, label) => (
     <RowSubTotal>
       <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
@@ -340,8 +328,6 @@ class ForecastMatrix extends React.Component {
       }
     });
 
-    console.log(newEntries, oldEntries);
-
     try {
       if (newEntries.length > 0) {
         await ForecastEntry.bulkCreate(newEntries);
@@ -355,8 +341,6 @@ class ForecastMatrix extends React.Component {
     this.setState({ saving: false });
   };
 
-  filterButton = <TextButton onClick={this.setFilters}>change</TextButton>;
-
   render() {
     const { loading, saving, profitCentre, financialYear } = this.state;
 
@@ -364,27 +348,28 @@ class ForecastMatrix extends React.Component {
       return (
         <Loading>
           Please specify a profit centre and time to continue.
-          {this.filterButton}
+          <TextButton onClick={this.setFilters}>change</TextButton>
         </Loading>
       );
     }
     if (loading) {
       return <Loading>Loading...</Loading>;
     }
-    console.log(this.state.entries);
+
     return (
       <Container saving={saving}>
         <HeaderContainer>
           <Heading>
             Profit centre: {profitCentre.name}, financial year {financialYear}
           </Heading>
-          {this.filterButton}
+          <TextButton onClick={this.setFilters}>change</TextButton>
+          <TextButton onClick={this.calculateRows}>calculate</TextButton>
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {monthLabels.map(month => (
+          {monthLabels.map(monthLabel => (
             <Cell>
-              <HeaderLabel> {month} </HeaderLabel>{' '}
+              <HeaderLabel>{monthLabel}</HeaderLabel>{' '}
             </Cell>
           ))}
         </HeaderRow>
@@ -393,6 +378,9 @@ class ForecastMatrix extends React.Component {
         {this.renderTotals('rev', 'Total Revenue')}
         <Space />
         {this.state.cos_elements.map(this.renderRow)}
+        {this.state.cos_elements_calculated.map(
+          this.renderConsultantSalariesRow,
+        )}
         {this.renderTotals('cos', 'Total Cost of Sales')}
 
         <Space />
@@ -445,6 +433,7 @@ const Cell = styled.div`
   display: flex;
   flex-direction: row;
   flex: 1;
+  justify-content: center;
 `;
 
 const HeaderLabel = styled.div`
@@ -466,10 +455,13 @@ const Input = styled.input`
   }
 `;
 
-const getKey = (yr, mth, el) => `${yr}.${mth}.${el}`;
-
 const getEntryKey = entry =>
-  getKey(entry.financialYear, entry.financialMonth, entry.forecastElement_id);
+  getForecastEntryKey(
+    entry.financialYear,
+    entry.financialMonth,
+    entry.forecastElement_id,
+    entry.costCentre_id,
+  );
 
 const newEntry = (financialYear, month, element, amount) => {
   return {
