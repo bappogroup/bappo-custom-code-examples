@@ -93,7 +93,7 @@ export const calculateServiceRevenue = async ({
           }).toDate(),
           moment({
             year: financialYear,
-            month: 5,
+            month: 6,
           }).toDate(),
         ],
       },
@@ -108,10 +108,13 @@ export const calculateServiceRevenue = async ({
   for (const rosterEntry of rosterEntries) {
     // Convert calendar month to financial month number
     let month = moment(rosterEntry.date).month() + 1 - 6;
-    if (month < 0) month += 12;
+    if (month <= 0) month += 12;
 
     const key = getForecastEntryKey(financialYear, month, elementId);
     forecastEntries[key].amount += +rosterEntry.revenue;
+
+    // prob > 50%, project type = 2
+    // consultant type = 2, get day Rate as cost
   }
 
   // Create or update in db

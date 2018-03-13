@@ -1,6 +1,5 @@
 import React from 'react';
 import { styled } from 'bappo-components';
-import moment from 'moment';
 import { getSalaries, getForecastEntryKey, calculateForecast } from 'utils';
 import { getCurrentFinancialYear } from './utils';
 
@@ -110,10 +109,11 @@ class ForecastMatrix extends React.Component {
 
     const elements = await ForecastElement.findAll({});
     const cos_elements = [];
-    const cos_elements_calculated = [];
     const rev_elements = [];
-    const rev_elements_calculated = [];
     const oh_elements = [];
+    let serviceRevenueElement;
+    let consultantSalariesElement;
+    let contractorWagesElement;
 
     const entries = {};
     for (let entry of entries_array) {
@@ -122,20 +122,33 @@ class ForecastMatrix extends React.Component {
     }
 
     for (let element of elements) {
-      switch (element.elementType) {
-        case '1':
-          if (element.key === 'SAL') cos_elements_calculated.push(element);
-          else cos_elements.push(element);
-          break;
-        case '2': {
-          if (element.key === 'TMREV') rev_elements_calculated.push(element);
-          else rev_elements.push(element);
-          break;
+      if (element.key) {
+        switch (element.key) {
+          case 'SAL':
+            consultantSalariesElement = element;
+            break;
+          case 'TMREV':
+            serviceRevenueElement = element;
+            break;
+          case 'CWAGES':
+            contractorWagesElement = element;
+            break;
+          default:
         }
-        case '3':
-          oh_elements.push(element);
-          break;
-        default:
+      } else {
+        // other elements
+        switch (element.elementType) {
+          case '1':
+            cos_elements.push(element);
+            break;
+          case '2':
+            rev_elements.push(element);
+            break;
+          case '3':
+            oh_elements.push(element);
+            break;
+          default:
+        }
       }
 
       // Create new entries for empty cells
@@ -151,10 +164,11 @@ class ForecastMatrix extends React.Component {
       costCenters,
       elements,
       cos_elements,
-      cos_elements_calculated,
       rev_elements,
-      rev_elements_calculated,
       oh_elements,
+      serviceRevenueElement,
+      consultantSalariesElement,
+      contractorWagesElement,
       totals: this.calcTotals(entries),
     });
   };
@@ -184,7 +198,7 @@ class ForecastMatrix extends React.Component {
   };
 
   // Render a row of calculated value, e.g. Service Revenue
-  renderCalculatedRow = element => {
+  renderServiceRevenueRow = element => {
     return (
       <Row>
         <RowLabel>
@@ -221,6 +235,10 @@ class ForecastMatrix extends React.Component {
         })}
       </Row>
     );
+  };
+
+  renderContractorWagesRow = element => {
+    return <div>'Hello I am contractor wages'</div>;
   };
 
   renderCell = (month, element, disabled = false) => {
@@ -342,7 +360,15 @@ class ForecastMatrix extends React.Component {
   };
 
   render() {
-    const { loading, saving, profitCentre, financialYear } = this.state;
+    const {
+      loading,
+      saving,
+      profitCentre,
+      financialYear,
+      serviceRevenueElement,
+      consultantSalariesElement,
+      contractorWagesElement,
+    } = this.state;
 
     if (!profitCentre) {
       return (
@@ -374,13 +400,12 @@ class ForecastMatrix extends React.Component {
           ))}
         </HeaderRow>
         {this.state.rev_elements.map(this.renderRow)}
-        {this.state.rev_elements_calculated.map(this.renderCalculatedRow)}
+        {this.renderServiceRevenueRow(serviceRevenueElement)}
         {this.renderTotals('rev', 'Total Revenue')}
         <Space />
         {this.state.cos_elements.map(this.renderRow)}
-        {this.state.cos_elements_calculated.map(
-          this.renderConsultantSalariesRow,
-        )}
+        {this.renderContractorWagesRow(contractorWagesElement)}
+        {this.renderConsultantSalariesRow(consultantSalariesElement)}
         {this.renderTotals('cos', 'Total Cost of Sales')}
 
         <Space />
