@@ -1,6 +1,6 @@
 import React from 'react';
 import { styled } from 'bappo-components';
-import { getSalaries, getForecastEntryKey, calculateForecast } from 'utils';
+import { getForecastEntryKey, calculateForecast } from 'utils';
 import { getCurrentFinancialYear } from './utils';
 
 const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -177,7 +177,7 @@ class ForecastMatrix extends React.Component {
     const key = getEntryKey(entry);
     const revisedEntry = {};
     const sign = amt.includes('-') ? '-' : '';
-    let amount = sign + amt.replace(/[^0-9\.]+/g, '').replace(/^0+/g, '');
+    let amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
     revisedEntry[key] = { ...this.state.entries[key], amount, changed: true };
     const entries = { ...this.state.entries, ...revisedEntry };
     this.setState({
@@ -238,7 +238,14 @@ class ForecastMatrix extends React.Component {
   };
 
   renderContractorWagesRow = element => {
-    return <div>'Hello I am contractor wages'</div>;
+    return (
+      <Row>
+        <RowLabel>
+          <span>{element.name}</span>
+        </RowLabel>
+        {months.map(month => this.renderCell(month, element, true))}
+      </Row>
+    );
   };
 
   renderCell = (month, element, disabled = false) => {
@@ -533,11 +540,6 @@ const TotalCell = styled.div`
 
 const Space = styled.div`
   height: 50px;
-`;
-
-const HorizontalLine = styled.div`
-  height: 1px;
-  border-top: 1px solid black;
 `;
 
 const SaveButton = styled.div`

@@ -233,7 +233,10 @@ class Roster extends React.Component {
     await RosterEntry.destroy({
       where: {
         consultant_id: entry.consultant_id,
-        date: [entry.startDate, entry.endDate],
+        date: {
+          $gte: entry.startDate,
+          $lte: entry.endDate,
+        },
       },
     });
 

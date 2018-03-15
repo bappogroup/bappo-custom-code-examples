@@ -1,4 +1,5 @@
 import moment from 'moment';
+import _ from 'lodash';
 
 // Generate a unique key for a forecast entry, to uniquely find an entry in a map.
 // Cost center id is optional
@@ -16,7 +17,7 @@ export const calculateForecast = async ({
     //  - calculate Service Revenue
     //  - calculate Consultant Salaries
     promises.push(
-      calculateServiceRevenue({
+      calculateServiceRevenueAndContractorWages({
         $models,
         financialYear,
         profitCentre_id,
@@ -31,58 +32,93 @@ export const calculateForecast = async ({
   await Promise.all(promises);
 };
 
-// Calculate service revenue in a financial year, for a profit centre
+// Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, for a profit centre
 // And update the forecast entrie records
-export const calculateServiceRevenue = async ({
+export const calculateServiceRevenueAndContractorWages = async ({
   $models,
   financialYear,
   profitCentre_id,
 }) => {
-  const { Project, RosterEntry, ForecastEntry, ForecastElement } = $models;
+  const {
+    Project,
+    RosterEntry,
+    ForecastEntry,
+    ForecastElement,
+    Consultant,
+  } = $models;
   const forecastEntries = {};
 
-  // Find forecast element 'Service Revenue'
+  // Find forecast element 'Service Revenue' and 'Contractor Wages'
   const elements = await ForecastElement.findAll({
     where: {
-      key: 'TMREV',
+      key: {
+        $in: ['TMREV', 'CWAGES'],
+      },
     },
   });
-
   if (elements.length === 0) return;
-  const elementId = elements[0].id;
+  let serviceRevenueElementId, contractorWagesElementId;
+  elements.forEach(element => {
+    switch (element.key) {
+      case 'TMREV':
+        serviceRevenueElementId = element.id;
+        break;
+      case 'CWAGES':
+        contractorWagesElementId = element.id;
+        break;
+      default:
+    }
+  });
+
+  if (!(serviceRevenueElementId && contractorWagesElementId)) return;
 
   // Fetching exisiting forecast entries of the element, with given profit center and year
   await ForecastEntry.destroy({
     where: {
       financialYear: financialYear.toString(),
-      forecastElement_id: elementId,
+      forecastElement_id: serviceRevenueElementId,
       profitCentre_id,
     },
   });
 
   // Initialize the element's forecast entries of all months
   for (let i = 1; i < 13; i++) {
-    const key = getForecastEntryKey(financialYear, i, elementId);
+    const key1 = getForecastEntryKey(financialYear, i, serviceRevenueElementId);
+    const key2 = getForecastEntryKey(
+      financialYear,
+      i,
+      contractorWagesElementId,
+    );
 
-    forecastEntries[key] = {
+    const entryTemplate = {
       financialYear,
       financialMonth: i,
-      forecastElement_id: elementId,
       costCentre_id: null,
       profitCentre_id,
       amount: 0, // amount is cleared, to recalculate
     };
+
+    forecastEntries[key1] = {
+      ...entryTemplate,
+      forecastElement_id: serviceRevenueElementId,
+    };
+    forecastEntries[key2] = {
+      ...entryTemplate,
+      forecastElement_id: contractorWagesElementId,
+    };
   }
 
   // Find projects that belong to this profit centre
-  const projectIds = (await Project.findAll({
+  const projects = await Project.findAll({
     where: {
       profitCentre_id,
     },
     limit: 1000,
-  })).map(p => p.id);
+  });
+  const projectIds = projects.map(p => p.id);
 
   // Fetch roster entries for the whole financial year, of this profit centre
+  // include consultants if it's a contractor
   const rosterEntries = await RosterEntry.findAll({
     where: {
       date: {
@@ -101,8 +137,12 @@ export const calculateServiceRevenue = async ({
         $in: projectIds,
       },
     },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
     limit: 100000,
   });
+
+  // Initialize forecast entries for element 'Contractor Wages'
+  const billableProbabilities = ['50%', '90%', '100%'];
 
   // Calculate forecast entries
   for (const rosterEntry of rosterEntries) {
@@ -110,14 +150,35 @@ export const calculateServiceRevenue = async ({
     let month = moment(rosterEntry.date).month() + 1 - 6;
     if (month <= 0) month += 12;
 
-    const key = getForecastEntryKey(financialYear, month, elementId);
-    forecastEntries[key].amount += +rosterEntry.revenue;
+    const serviceRevenueKey = getForecastEntryKey(
+      financialYear,
+      month,
+      serviceRevenueElementId,
+    );
+    forecastEntries[serviceRevenueKey].amount += +rosterEntry.revenue;
 
-    // prob > 50%, project type = 2
-    // consultant type = 2, get day Rate as cost
+    // Find roster entries that incur 'Consultant Salaries', and update forecast entries for that element
+    // Conditions are:
+    // - prob >= 50%,
+    // - project type === 2 ('billing')
+    // - consultant type === 2 ('Contractor')
+    const probability = _.get(rosterEntry, 'probability.name');
+    if (
+      _.get(rosterEntry, 'consultant.consultantType') === '2' &&
+      _.get(rosterEntry, 'project.projectType') === '2' &&
+      billableProbabilities.includes(probability)
+    ) {
+      const contractorWagesKey = getForecastEntryKey(
+        financialYear,
+        month,
+        contractorWagesElementId,
+      );
+      forecastEntries[contractorWagesKey].amount += +rosterEntry.consultant
+        .dailyRate;
+    }
   }
 
-  // Create or update in db
+  // Create forecast entries  in db
   await ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
@@ -130,14 +191,14 @@ export const calculateConsultantSalaries = async ({
   const forecastEntries = {};
 
   // Find forecast element 'Consultant Salaries'
-  const elements = await ForecastElement.findAll({
+  const element = await ForecastElement.findOne({
     where: {
       key: 'SAL',
     },
   });
 
-  if (elements.length === 0) return;
-  const elementId = elements[0].id;
+  if (!element) return;
+  const elementId = element.id;
 
   // Fetching exisiting forecast entries of the element, with given profit center and year
   await ForecastEntry.destroy({
@@ -187,16 +248,59 @@ export const calculateConsultantSalaries = async ({
   // Calculate forecast entries by adding up monthly salaris by cost centers
   for (let i = 1; i < 13; i++) {
     for (const consultant of consultants) {
-      const monthlySalary = consultant.annualSalary
-        ? +consultant.annualSalary / 12
-        : 0;
-      const key = getForecastEntryKey(
-        financialYear,
-        i,
-        elementId,
-        consultant.costCenter_id,
-      );
-      forecastEntries[key].amount += monthlySalary;
+      // Exclude contractors
+      if (consultant.consultantType !== '2') {
+        const monthlySalary = consultant.annualSalary
+          ? +consultant.annualSalary / 12
+          : 0;
+
+        const key = getForecastEntryKey(
+          financialYear,
+          i,
+          elementId,
+          consultant.costCenter_id,
+        );
+
+        let salary = 0;
+
+        // Convert financialMonth to calendar month
+        let calendarMonth = i + 6 - 1;
+        if (calendarMonth > 12) calendarMonth -= 12;
+
+        // Calculate partial monthly salary: how many days of this month is with in consultant's start/end date
+        // Consultant start date is required, while end date is optional
+        let validDays = 0;
+        const totalDays = moment()
+          .month(calendarMonth)
+          .daysInMonth();
+        const monthStart = moment()
+          .month(calendarMonth)
+          .startOf('month');
+        const monthEnd = moment()
+          .month(calendarMonth)
+          .endOf('month');
+        const consultantStart = moment(consultant.startDate);
+        const consultantEnd = consultant.endDate && moment(consultant.endDate);
+
+        for (
+          let m = monthStart;
+          m.diff(monthEnd, 'days') < 0;
+          m.add(1, 'days')
+        ) {
+          if (consultantEnd) {
+            if (
+              m.isSameOrAfter(consultantStart) &&
+              m.isSameOrBefore(consultantEnd)
+            ) {
+              validDays++;
+            }
+          } else if (m.isSameOrAfter(consultantStart)) {
+            validDays++;
+          }
+        }
+
+        forecastEntries[key].amount += monthlySalary * (validDays / totalDays);
+      }
     }
   }
 
@@ -207,5 +311,3 @@ export const calculateConsultantSalaries = async ({
   }
   await ForecastEntry.bulkCreate(forecastEntriesArr);
 };
-
-const uniq = a => [...new Set(a)];
