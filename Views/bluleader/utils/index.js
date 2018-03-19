@@ -276,21 +276,23 @@ export const calculateConsultantSalaries = async ({
         let salary = 0;
 
         // Convert financialMonth to calendar month
-        let calendarMonth = i + 6 - 1;
-        if (calendarMonth > 12) calendarMonth -= 12;
+        let calendarMonth = i + 6;
+        let calendarYear = financialYear;
+
+        if (calendarMonth > 12) {
+          calendarMonth -= 12;
+        } else {
+          calendarYear -= 1;
+        }
+        calendarMonth = ('0' + calendarMonth).slice(-2);
+        const calendarDate = `${calendarYear}-${calendarMonth}-01`;
 
         // Calculate partial monthly salary: how many days of this month is with in consultant's start/end date
         // Consultant start date is required, while end date is optional
         let validDays = 0;
-        const totalDays = moment()
-          .month(calendarMonth)
-          .daysInMonth();
-        const monthStart = moment()
-          .month(calendarMonth)
-          .startOf('month');
-        const monthEnd = moment()
-          .month(calendarMonth)
-          .endOf('month');
+        const totalDays = moment(calendarDate).daysInMonth();
+        const monthStart = moment(calendarDate).startOf('month');
+        const monthEnd = moment(calendarDate).endOf('month');
         const consultantStart = moment(consultant.startDate);
         const consultantEnd = consultant.endDate && moment(consultant.endDate);
 
