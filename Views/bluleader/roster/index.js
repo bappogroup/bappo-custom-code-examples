@@ -201,10 +201,6 @@ class Roster extends React.Component {
     });
   };
 
-  calculateRevenue = (consultant_id, project_id) => {
-    return '1234.56';
-  };
-
   updateRosterEntry = async entry => {
     const { RosterEntry, ProjectAssignment } = this.props.$models;
 

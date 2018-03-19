@@ -1,7 +1,10 @@
 import React from 'react';
 import { styled } from 'bappo-components';
-import { getForecastEntryKey, calculateForecast } from 'utils';
-import { getCurrentFinancialYear } from './utils';
+import {
+  getForecastEntryKey,
+  calculateForecast,
+  getCurrentFinancialYear,
+} from 'utils';
 
 const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const monthLabels = [
@@ -111,9 +114,6 @@ class ForecastMatrix extends React.Component {
     const cos_elements = [];
     const rev_elements = [];
     const oh_elements = [];
-    let serviceRevenueElement;
-    let consultantSalariesElement;
-    let contractorWagesElement;
 
     const entries = {};
     for (let entry of entries_array) {
@@ -122,33 +122,17 @@ class ForecastMatrix extends React.Component {
     }
 
     for (let element of elements) {
-      if (element.key) {
-        switch (element.key) {
-          case 'SAL':
-            consultantSalariesElement = element;
-            break;
-          case 'TMREV':
-            serviceRevenueElement = element;
-            break;
-          case 'CWAGES':
-            contractorWagesElement = element;
-            break;
-          default:
-        }
-      } else {
-        // other elements
-        switch (element.elementType) {
-          case '1':
-            cos_elements.push(element);
-            break;
-          case '2':
-            rev_elements.push(element);
-            break;
-          case '3':
-            oh_elements.push(element);
-            break;
-          default:
-        }
+      switch (element.elementType) {
+        case '1':
+          cos_elements.push(element);
+          break;
+        case '2':
+          rev_elements.push(element);
+          break;
+        case '3':
+          oh_elements.push(element);
+          break;
+        default:
       }
 
       // Create new entries for empty cells
@@ -166,9 +150,6 @@ class ForecastMatrix extends React.Component {
       cos_elements,
       rev_elements,
       oh_elements,
-      serviceRevenueElement,
-      consultantSalariesElement,
-      contractorWagesElement,
       totals: this.calcTotals(entries),
     });
   };
@@ -187,63 +168,22 @@ class ForecastMatrix extends React.Component {
   };
 
   renderRow = element => {
-    return (
-      <Row>
-        <RowLabel>
-          <span>{element.name}</span>
-        </RowLabel>
-        {months.map(month => this.renderCell(month, element))}
-      </Row>
-    );
-  };
-
-  // Render a row of calculated value, e.g. Service Revenue
-  renderServiceRevenueRow = element => {
-    return (
-      <Row>
-        <RowLabel>
-          <span>{element.name}</span>
-        </RowLabel>
-        {months.map(month => this.renderCell(month, element, true))}
-      </Row>
-    );
-  };
-
-  // Render a row of consolidated values, e.g. Consultant Salaries, which combines all cost centers
-  renderConsultantSalariesRow = element => {
-    const { financialYear, costCenters, entries } = this.state;
+    let disabled = false;
+    switch (element.key) {
+      case 'SAL':
+      case 'TMREV':
+      case 'CWAGES':
+        disabled = true;
+        break;
+      default:
+    }
 
     return (
       <Row>
         <RowLabel>
           <span>{element.name}</span>
         </RowLabel>
-        {months.map(month => {
-          let sum = 0;
-          for (const costCenter of costCenters) {
-            const key = getForecastEntryKey(
-              financialYear,
-              month,
-              element.id,
-              costCenter.id,
-            );
-            const entry = entries[key];
-            if (entry) sum += +entry.amount;
-          }
-
-          return <Cell>{sum}</Cell>;
-        })}
-      </Row>
-    );
-  };
-
-  renderContractorWagesRow = element => {
-    return (
-      <Row>
-        <RowLabel>
-          <span>{element.name}</span>
-        </RowLabel>
-        {months.map(month => this.renderCell(month, element, true))}
+        {months.map(month => this.renderCell(month, element, disabled))}
       </Row>
     );
   };
@@ -274,7 +214,7 @@ class ForecastMatrix extends React.Component {
 
     const { profitCentre, financialYear } = this.state;
 
-    await await calculateForecast({
+    await calculateForecast({
       $models: this.props.$models,
       financialYear,
       profitCentreIds: [profitCentre.id],
@@ -367,20 +307,12 @@ class ForecastMatrix extends React.Component {
   };
 
   render() {
-    const {
-      loading,
-      saving,
-      profitCentre,
-      financialYear,
-      serviceRevenueElement,
-      consultantSalariesElement,
-      contractorWagesElement,
-    } = this.state;
+    const { loading, saving, profitCentre, financialYear } = this.state;
 
-    if (!profitCentre) {
+    if (!(profitCentre && financialYear)) {
       return (
         <Loading>
-          Please specify a profit centre and time to continue.
+          Please specify a profit centre and financial year to continue.
           <TextButton onClick={this.setFilters}>change</TextButton>
         </Loading>
       );
@@ -407,12 +339,9 @@ class ForecastMatrix extends React.Component {
           ))}
         </HeaderRow>
         {this.state.rev_elements.map(this.renderRow)}
-        {this.renderServiceRevenueRow(serviceRevenueElement)}
         {this.renderTotals('rev', 'Total Revenue')}
         <Space />
         {this.state.cos_elements.map(this.renderRow)}
-        {this.renderContractorWagesRow(contractorWagesElement)}
-        {this.renderConsultantSalariesRow(consultantSalariesElement)}
         {this.renderTotals('cos', 'Total Cost of Sales')}
 
         <Space />
@@ -492,7 +421,6 @@ const getEntryKey = entry =>
     entry.financialYear,
     entry.financialMonth,
     entry.forecastElement_id,
-    entry.costCentre_id,
   );
 
 const newEntry = (financialYear, month, element, amount) => {
