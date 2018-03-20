@@ -11,21 +11,42 @@ class Navigator extends React.Component {
     const { $navigation, $global, $models } = this.props;
     const { currentUser } = $global;
 
-    const currentConsultant = await $models.Consultant.findOne({
+    // TODO: Navigate Manager users
+
+    const employee = await $models.Employee.findOne({
       where: {
         user_id: currentUser.id,
       },
     });
 
-    if (!currentConsultant)
+    if (!employee) {
       return this.setState({
         errorMessage: 'You are not authorized to Timesheets',
       });
+    }
 
     // Find this week's timesheet
-    const monday = moment()
-      .day(1)
-      .format('YYYY-MM-DD');
+    const monday = moment().day(1);
+
+    let targetWeek;
+    targetWeek = await $models.Week.findOne({
+      where: {
+        startDate: monday.format('YYYY-MM-DD'),
+      },
+    });
+
+    if (!targetWeek) {
+      // Create current week if not found
+      targetWeek = await $models.Week.create({
+        name: 'sample',
+        startDate: monday.format('YYYY-MM-DD'),
+        endDate: monday
+          .clone()
+          .add(6, 'days')
+          .format('YYYY-MM-DD'),
+      });
+    }
+
     let targetTimesheet;
     targetTimesheet = await $models.Timesheet.findOne({
       where: {

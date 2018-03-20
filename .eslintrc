@@ -5,5 +5,12 @@
     "react",
     "jsx-a11y",
     "import"
-  ]
+  ],
+  "rules": {
+    "arrow-parens": ["off"],
+    "react/jsx-filename-extension": ["off"],
+    "react/prop-types": ["off"],
+    "import/no-unresolved": ["off"],
+    "import/extensions": ["off"]
+  }
 }

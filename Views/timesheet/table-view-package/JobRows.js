@@ -1,6 +1,12 @@
 import React from 'react';
 import moment from 'moment';
-import { styled, View, Button, Text, ActivityIndicator } from 'bappo-components';
+import {
+  styled,
+  View,
+  Button,
+  Text,
+  ActivityIndicator,
+} from 'bappo-components';
 import EntryDetails from './EntryDetails';
 import { timesheetEntryFormConfig } from './utils';
 
@@ -12,9 +18,9 @@ class JobRows extends React.Component {
     entryMap: [],
     loading: true,
     selectedEntry: null,
-  }
+  };
 
-  async componentDidMount () {
+  async componentWillMount() {
     const { $navigation, $models } = this.props;
     const { templateTimesheetId } = $navigation.state.params;
 
@@ -25,15 +31,13 @@ class JobRows extends React.Component {
         where: {
           timesheet_id: templateTimesheetId,
         },
-        include: [
-          { as: 'job' }
-        ]
+        include: [{ as: 'job' }],
       });
-      entries.forEach((entry) => {
+      entries.forEach(entry => {
         if (!jobs[entry.job.id]) {
           jobs[entry.job.id] = entry.job;
         }
-      })
+      });
       this.setState({ jobs }, () => this.fetchList());
     } else {
       this.fetchList();
@@ -44,26 +48,23 @@ class JobRows extends React.Component {
     const { $models, timesheet } = this.props;
 
     this.setState({ loading: true }, async () => {
-
-      //Fetch Entries
+      // Fetch Entries
       const entries = await $models.TimesheetEntry.findAll({
         where: {
           timesheet_id: timesheet.id,
         },
-        include: [
-          { as: 'job' }
-        ]
+        include: [{ as: 'job' }],
       });
 
       // Set new state
-      this.setState((state) => {
+      this.setState(state => {
         const { jobs } = state;
         const entryMap = [];
 
         // Initialize based on previously populated jobs
-        Object.keys(jobs).forEach((jobId) => {
+        Object.keys(jobs).forEach(jobId => {
           if (!entryMap[jobId]) entryMap[jobId] = [];
-        })
+        });
 
         // Build entry map and track all involved jobs
         entries.forEach(e => {
@@ -83,8 +84,8 @@ class JobRows extends React.Component {
           loading: false,
         };
       });
-    })
-  }
+    });
+  };
 
   handleClickCell = (id, dayOfWeek, jobId) => {
     if (id) {
@@ -94,7 +95,9 @@ class JobRows extends React.Component {
     } else {
       // add new entry
       const { timesheet, $popup, consultant } = this.props;
-      const date = moment(timesheet.week).add(dayOfWeek - 1, 'day').format('YYYY-MM-DD');
+      const date = moment(timesheet.week)
+        .add(dayOfWeek - 1, 'day')
+        .format('YYYY-MM-DD');
       const job = this.state.jobs[jobId];
 
       $popup.form({
@@ -105,7 +108,7 @@ class JobRows extends React.Component {
           job_id: jobId,
           date,
         },
-        onSubmit: async (data) => {
+        onSubmit: async data => {
           await this.props.$models.TimesheetEntry.create(data);
           this.fetchList();
         },
@@ -113,7 +116,7 @@ class JobRows extends React.Component {
 
       this.setState({ selectedEntry: null });
     }
-  }
+  };
 
   handleAddJob = async () => {
     const { $models, $popup, consultant } = this.props;
@@ -127,9 +130,7 @@ class JobRows extends React.Component {
         },
         consultant_id: consultant.id,
       },
-      include: [
-        { as: 'job' }
-      ]
+      include: [{ as: 'job' }],
     });
 
     const jobOptions = jobAssignments.map(a => ({
@@ -141,14 +142,14 @@ class JobRows extends React.Component {
     const newJobsDict = jobAssignments.reduce((acc, val) => {
       acc[val.job_id] = val.job;
       return acc;
-    }, {})
+    }, {});
 
     // Add new job to state
-    const addJobRow = (data) => {
+    const addJobRow = data => {
       if (jobs[data.job_id]) return;
 
       const job = newJobsDict[data.job];
-      this.setState((state) => {
+      this.setState(state => {
         const { jobs, entryMap } = state;
         if (!entryMap[job.id]) {
           entryMap[job.id] = [];
@@ -160,7 +161,7 @@ class JobRows extends React.Component {
           entryMap,
         };
       });
-    }
+    };
 
     $popup.form({
       fields: [
@@ -169,76 +170,83 @@ class JobRows extends React.Component {
           label: 'Job',
           type: 'FixedList',
           properties: {
-            options: jobOptions
-          }
-        }
+            options: jobOptions,
+          },
+        },
       ],
       onSubmit: addJobRow,
     });
-  }
+  };
 
-  handleDeleteJobRow = async (jobId) => {
+  handleDeleteJobRow = async jobId => {
     const entriesToDelete = this.state.entryMap[jobId];
     const promiseArr = [];
 
     // Delete all related entries
     entriesToDelete.forEach(entry => {
       if (entry) {
-        promiseArr.push(this.props.$models.TimesheetEntry.destroyById(entry.id));
+        promiseArr.push(
+          this.props.$models.TimesheetEntry.destroyById(entry.id),
+        );
       }
-    })
+    });
     await Promise.all(promiseArr);
 
     // Remove the job row
-    this.setState((state) => {
-      const { jobs } = state;
-      delete jobs[jobId];
-      return {
-        ...state,
-        jobs,
-      };
-    }, () => this.fetchList());
-  }
+    this.setState(
+      state => {
+        const { jobs } = state;
+        delete jobs[jobId];
+        return {
+          ...state,
+          jobs,
+        };
+      },
+      () => this.fetchList(),
+    );
+  };
 
-  renderJobRow = (job) => {
+  renderJobRow = job => {
     let total = 0;
     return (
       <JobRowContainer key={job.name}>
         <RowCell>
-          <DeleteJobButton onPress={() => this.handleDeleteJobRow(parseInt(job.id))}>
+          <DeleteJobButton
+            onPress={() => this.handleDeleteJobRow(parseInt(job.id, 10))}
+          >
             <DeleteButtonText>x</DeleteButtonText>
           </DeleteJobButton>
           <Text>{job.name}</Text>
         </RowCell>
-        {
-          Array
-            .from({ length: 5 }, (v, i) => i+1)
-            .map(dow => {
-              const entry = this.state.entryMap[job.id][dow];
-              let hourOfDay;
-              if (entry) {
-                hourOfDay = Number(entry.hours);
-                total += hourOfDay;
-              }
+        {Array.from({ length: 5 }, (v, i) => i + 1).map(dow => {
+          const entry = this.state.entryMap[job.id][dow];
+          let hourOfDay;
+          if (entry) {
+            hourOfDay = Number(entry.hours);
+            total += hourOfDay;
+          }
 
-              return (
-                <JobCell key={`${job.id}_${dow}`}>
-                  <StyledButton
-                    hasValue={!!entry}
-                    onPress={() => this.handleClickCell(entry && entry.id, dow, job.id)}
-                  >
-                    <Text>
-                      {typeof hourOfDay === 'undefined' ? 'Add' : hourOfDay}
-                    </Text>
-                  </StyledButton>
-                </JobCell>
-              );
-            })
-        }
-        <Cell><Text>{total}</Text></Cell>
+          return (
+            <JobCell key={`${job.id}_${dow}`}>
+              <StyledButton
+                hasValue={!!entry}
+                onPress={() =>
+                  this.handleClickCell(entry && entry.id, dow, job.id)
+                }
+              >
+                <Text>
+                  {typeof hourOfDay === 'undefined' ? 'Add' : hourOfDay}
+                </Text>
+              </StyledButton>
+            </JobCell>
+          );
+        })}
+        <Cell>
+          <Text>{total}</Text>
+        </Cell>
       </JobRowContainer>
-    )
-  }
+    );
+  };
 
   renderTotalRow = () => {
     const { jobs, entryMap } = this.state;
@@ -246,31 +254,31 @@ class JobRows extends React.Component {
 
     return (
       <JobRowContainer>
-        <Cell><Text>Total</Text></Cell>
-        {
-          Array
-            .from({ length: 5 }, (v, i) => i+1)
-            .map(dow => {
-              let dayTotal = 0;
-              Object.keys(jobs).forEach(jobId => {
-                const entry = entryMap[jobId][dow];
-                if (entry) {
-                  dayTotal += Number(entry.hours);
-                  weekTotal += Number(entry.hours);
-                }
-              });
+        <Cell>
+          <Text>Total</Text>
+        </Cell>
+        {Array.from({ length: 5 }, (v, i) => i + 1).map(dow => {
+          let dayTotal = 0;
+          Object.keys(jobs).forEach(jobId => {
+            const entry = entryMap[jobId][dow];
+            if (entry) {
+              dayTotal += Number(entry.hours);
+              weekTotal += Number(entry.hours);
+            }
+          });
 
-              return (
-                <Cell key={`${dow}_total`}>
-                  <Text>{dayTotal}</Text>
-                </Cell>
-              );
-            })
-        }
-        <Cell><Text>{weekTotal}</Text></Cell>
+          return (
+            <Cell key={`${dow}_total`}>
+              <Text>{dayTotal}</Text>
+            </Cell>
+          );
+        })}
+        <Cell>
+          <Text>{weekTotal}</Text>
+        </Cell>
       </JobRowContainer>
     );
-  }
+  };
 
   render() {
     const { jobs, selectedEntry, loading } = this.state;
@@ -280,21 +288,20 @@ class JobRows extends React.Component {
 
     return (
       <Container>
-        { Object.keys(jobs).map(jobId => this.renderJobRow(jobs[jobId])) }
+        {Object.keys(jobs).map(jobId => this.renderJobRow(jobs[jobId]))}
         <NewJobButton onPress={this.handleAddJob}>
           <Text>New Job</Text>
         </NewJobButton>
-        { this.renderTotalRow() }
-        {
-          selectedEntry &&
-            <EntryDetails
-              consultant={consultant}
-              entry={selectedEntry}
-              entryModel={$models.TimesheetEntry}
-              fetchList={this.fetchList}
-              $popup={$popup}
-            />
-        }
+        {this.renderTotalRow()}
+        {selectedEntry && (
+          <EntryDetails
+            consultant={consultant}
+            entry={selectedEntry}
+            entryModel={$models.TimesheetEntry}
+            fetchList={this.fetchList}
+            $popup={$popup}
+          />
+        )}
       </Container>
     );
   }
@@ -302,8 +309,7 @@ class JobRows extends React.Component {
 
 export default JobRows;
 
-const Container = styled(View)`
-`;
+const Container = styled(View)``;
 
 const JobRowContainer = styled(View)`
   flex-direction: row;
@@ -326,7 +332,7 @@ const RowCell = styled(View)`
 const JobCell = styled(Cell)`
   background-color: #eee;
   &:hover {
-    >div {
+    > div {
       opacity: 0.7;
     }
   }
@@ -335,8 +341,7 @@ const JobCell = styled(Cell)`
 const StyledButton = styled(Button)`
   align-self: stretch;
   align-items: center;
-  ${props => !props.hasValue &&
-    'opacity: 0;'}
+  ${props => !props.hasValue && 'opacity: 0;'};
 `;
 
 const DeleteJobButton = styled(Button)`

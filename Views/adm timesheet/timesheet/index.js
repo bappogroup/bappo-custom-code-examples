@@ -9,7 +9,7 @@ import { getMonday } from './utils';
 class TableView extends React.Component {
   state = {
     timesheet: null,
-    consultant: null,
+    employee: null,
     error: null,
   };
 
@@ -18,25 +18,22 @@ class TableView extends React.Component {
     const { recordId } = $navigation.state.params;
     const { currentUser } = $global;
 
-    const consultant = await $models.Consultant.findOne({
+    const employee = await $models.Employee.findOne({
       where: {
         user_id: currentUser.id,
       },
     });
 
-    if (!consultant) return this.setState({ error: 'Consultant not found' });
+    if (!employee) return this.setState({ error: 'Employee not found' });
 
-    const timesheet = (await $models.Timesheet.findAll({
-      where: {
-        id: recordId,
-      },
+    const timesheet = await $models.Timesheet.findById(recordId, {
       include: [{ as: 'consultant' }],
-    }))[0];
+    });
 
     // Change day of a week to Monday if needed
-    timesheet.week = getMonday(timesheet.week);
+    // timesheet.week = getMonday(timesheet.week);
 
-    return this.setState({ timesheet, consultant });
+    return this.setState({ timesheet, employee });
   }
 
   changeWeek = async (gapToNow, date) => {
