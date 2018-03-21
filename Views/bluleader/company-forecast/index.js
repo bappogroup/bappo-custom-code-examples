@@ -3,12 +3,14 @@
 
 import React from 'react';
 import { styled } from 'bappo-components';
-import {
+import utils from 'utils';
+
+const {
   calculateForecast,
-  getCurrentFinancialYear,
   getForecastEntryKey,
+  getCurrentFinancialYear,
   generateMonthArray,
-} from 'utils';
+} = utils;
 
 const newEntry = (financialYear, month, element, amount) => {
   return {

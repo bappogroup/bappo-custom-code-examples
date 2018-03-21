@@ -112,14 +112,12 @@ const calculateServiceRevenueAndContractorWages = async ({
       amount: 0, // amount is cleared, to recalculate
     };
 
-    forecastEntries[key1] = {
-      ...entryTemplate,
+    forecastEntries[key1] = Object.assign(entryTemplate, {
       forecastElement_id: serviceRevenueElementId,
-    };
-    forecastEntries[key2] = {
-      ...entryTemplate,
+    });
+    forecastEntries[key2] = Object.assign(entryTemplate, {
       forecastElement_id: contractorWagesElementId,
-    };
+    });
   }
 
   // Find projects that belong to this profit centre
@@ -343,8 +341,7 @@ const calculateForecast = async ({
   await Promise.all(promises);
 };
 
-export default {
-  ...time,
+export default Object.assign(time, {
   getForecastEntryKey,
   calculateForecast,
-};
+});

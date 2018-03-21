@@ -1,7 +1,9 @@
 import React from 'react';
 import moment from 'moment';
 import { styled } from 'bappo-components';
-import { getForecastEntryKey } from 'utils';
+import utils from 'utils';
+
+const { getForecastEntryKey } = utils;
 
 class ForecastMatrix extends React.Component {
   state = {
@@ -108,7 +110,6 @@ class ForecastMatrix extends React.Component {
         entry.financialYear,
         entry.financialMonth,
         entry.forecastType,
-        true,
       );
       entries[key] = entry;
     });
