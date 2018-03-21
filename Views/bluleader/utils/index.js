@@ -1,58 +1,40 @@
 import moment from 'moment';
 import _ from 'lodash';
+import time from './time';
 
-// Get current financial year
-export const getCurrentFinancialYear = () => {
-  const quarter = moment().quarter();
+/**
+ * Generate a unique key for a forecast entry in a table.
+ *
+ * @param {string} year - calendar year
+ * @param {string} month - calendar month
+ * @param {string} rowIdentifier - a string identifying a row in the table
+ * @param {bool} shouldConvertToCalendar - should year and month passed be converted to calendar
+ * @return {string} entry key
+ */
+const getForecastEntryKey = (
+  year,
+  month,
+  rowIdentifier,
+  shouldConvertToCalendar = false,
+) => {
+  if (!shouldConvertToCalendar) return `${year}.${month}.${rowIdentifier}`;
 
-  if (quarter === 1 || quarter === 2) return moment().year();
-  return moment().year() + 1;
-};
+  const { calendarYear, calendarMonth } = time.financialToCalendar({
+    financialYear: year,
+    financialMonth: month,
+  });
 
-// Generate a unique key for a forecast entry, to uniquely find an entry in a map.
-export const getForecastEntryKey = (year, month, elementId) =>
-  `${year}.${month}.${elementId}`;
-
-export const calculateForecast = async ({
-  $models,
-  financialYear,
-  profitCentreIds,
-}) => {
-  const promises = [];
-  for (let profitCentre_id of profitCentreIds) {
-    // Process each profit center:
-    //  - calculate Service Revenue
-    //  - calculate Consultant Salaries
-    promises.push(
-      calculateServiceRevenueAndContractorWages({
-        $models,
-        financialYear,
-        profitCentre_id,
-      }),
-      calculateConsultantSalaries({
-        $models,
-        financialYear,
-        profitCentre_id,
-      }),
-    );
-  }
-  await Promise.all(promises);
+  return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
 };
 
 // Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
 // And update the forecast entrie records
-export const calculateServiceRevenueAndContractorWages = async ({
+const calculateServiceRevenueAndContractorWages = async ({
   $models,
   financialYear,
   profitCentre_id,
 }) => {
-  const {
-    Project,
-    RosterEntry,
-    ForecastEntry,
-    ForecastElement,
-    Consultant,
-  } = $models;
+  const { Project, RosterEntry, ForecastEntry, ForecastElement } = $models;
   const forecastEntries = {};
 
   // Find forecast element 'Service Revenue' and 'Contractor Wages'
@@ -64,7 +46,8 @@ export const calculateServiceRevenueAndContractorWages = async ({
     },
   });
   if (elements.length === 0) return;
-  let serviceRevenueElementId, contractorWagesElementId;
+  let serviceRevenueElementId;
+  let contractorWagesElementId;
   elements.forEach(element => {
     switch (element.key) {
       case 'TMREV':
@@ -106,12 +89,19 @@ export const calculateServiceRevenueAndContractorWages = async ({
   });
 
   // Initialize the element's forecast entries of all months
+  // Iteration is based on financial months
   for (let i = 1; i < 13; i++) {
-    const key1 = getForecastEntryKey(financialYear, i, serviceRevenueElementId);
+    const key1 = getForecastEntryKey(
+      financialYear,
+      i,
+      serviceRevenueElementId,
+      true,
+    );
     const key2 = getForecastEntryKey(
       financialYear,
       i,
       contractorWagesElementId,
+      true,
     );
 
     const entryTemplate = {
@@ -170,13 +160,13 @@ export const calculateServiceRevenueAndContractorWages = async ({
 
   // Calculate forecast entries
   for (const rosterEntry of rosterEntries) {
-    // Convert calendar month to financial month number
-    let month = moment(rosterEntry.date).month() + 1 - 6;
-    if (month <= 0) month += 12;
+    const calendarMonth = moment(rosterEntry.date).month() + 1;
+    let calendarYear = financialYear;
+    if (calendarMonth <= time.fiscalOffset) calendarYear += 1;
 
     const serviceRevenueKey = getForecastEntryKey(
-      financialYear,
-      month,
+      calendarYear,
+      calendarMonth,
       serviceRevenueElementId,
     );
     forecastEntries[serviceRevenueKey].amount += +rosterEntry.revenue;
@@ -193,8 +183,8 @@ export const calculateServiceRevenueAndContractorWages = async ({
       billableProbabilities.includes(probability)
     ) {
       const contractorWagesKey = getForecastEntryKey(
-        financialYear,
-        month,
+        calendarYear,
+        calendarMonth,
         contractorWagesElementId,
       );
       forecastEntries[contractorWagesKey].amount += +rosterEntry.consultant
@@ -206,7 +196,7 @@ export const calculateServiceRevenueAndContractorWages = async ({
   await ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
-export const calculateConsultantSalaries = async ({
+const calculateConsultantSalaries = async ({
   $models,
   financialYear,
   profitCentre_id,
@@ -240,9 +230,9 @@ export const calculateConsultantSalaries = async ({
   // Ensure forecast entries of all months to be calculated exist
   // if not, initialize forecast entries with basic attributes
   for (let i = 1; i < 13; i++) {
-    // Iterate over all related costCenters, and 'null' costCenter
+    // Iterate over all related costCenters
     for (const costCenterId of costCenterIds) {
-      const key = getForecastEntryKey(financialYear, i, elementId);
+      const key = getForecastEntryKey(financialYear, i, elementId, true);
 
       forecastEntries[key] = {
         financialYear,
@@ -273,19 +263,22 @@ export const calculateConsultantSalaries = async ({
           ? +consultant.annualSalary / 12
           : 0;
 
-        let salary = 0;
-
         // Convert financialMonth to calendar month
-        let calendarMonth = i + 6;
-        let calendarYear = financialYear;
+        // let calendarMonth = i + time.fiscalOffset;
+        // let calendarYear = financialYear;
 
-        if (calendarMonth > 12) {
-          calendarMonth -= 12;
-        } else {
-          calendarYear -= 1;
-        }
-        calendarMonth = ('0' + calendarMonth).slice(-2);
-        const calendarDate = `${calendarYear}-${calendarMonth}-01`;
+        // if (calendarMonth > 12) {
+        //   calendarMonth -= 12;
+        // } else {
+        //   calendarYear -= 1;
+        // }
+        // calendarMonth = ('0' + calendarMonth).slice(-2);
+        const { calendarYear, calendarMonth } = time.financialToCalendar({
+          financialYear,
+          financialMonth: i,
+        });
+        const prefixedMonth = `0${calendarMonth}`.slice(-2);
+        const calendarDate = `${calendarYear}-${prefixedMonth}-01`;
 
         // Calculate partial monthly salary: how many days of this month is with in consultant's start/end date
         // Consultant start date is required, while end date is optional
@@ -309,7 +302,7 @@ export const calculateConsultantSalaries = async ({
           }
         }
 
-        const key = getForecastEntryKey(financialYear, i, elementId);
+        const key = getForecastEntryKey(financialYear, i, elementId, true);
 
         forecastEntries[key].amount += monthlySalary * (validDays / totalDays);
       }
@@ -322,4 +315,36 @@ export const calculateConsultantSalaries = async ({
     fe.amount = Math.floor(fe.amount);
   }
   await ForecastEntry.bulkCreate(forecastEntriesArr);
+};
+
+const calculateForecast = async ({
+  $models,
+  financialYear,
+  profitCentreIds,
+}) => {
+  const promises = [];
+  for (const profitCentre_id of profitCentreIds) {
+    // Process each profit center:
+    //  - calculate Service Revenue
+    //  - calculate Consultant Salaries
+    promises.push(
+      calculateServiceRevenueAndContractorWages({
+        $models,
+        financialYear,
+        profitCentre_id,
+      }),
+      calculateConsultantSalaries({
+        $models,
+        financialYear,
+        profitCentre_id,
+      }),
+    );
+  }
+  await Promise.all(promises);
+};
+
+export default {
+  ...time,
+  getForecastEntryKey,
+  calculateForecast,
 };

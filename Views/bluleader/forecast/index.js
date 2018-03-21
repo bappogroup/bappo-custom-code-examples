@@ -1,38 +1,44 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import {
-  getForecastEntryKey,
   calculateForecast,
+  getForecastEntryKey,
   getCurrentFinancialYear,
+  generateMonthArray,
 } from 'utils';
 
-const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-const monthLabels = [
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-];
+const getEntryKey = entry =>
+  getForecastEntryKey(
+    entry.financialYear,
+    entry.financialMonth,
+    entry.forecastElement_id,
+    true,
+  );
+
+const newEntry = (financialYear, financialMonth, element, amount) => {
+  return {
+    newRecord: true,
+    financialYear,
+    financialMonth,
+    forecastElement_id: element.id,
+    forecastElement: element,
+    amount: amount || '',
+  };
+};
 
 class ForecastMatrix extends React.Component {
+  monthArray = [];
+
   state = {
     loading: true,
     financialYear: null,
     profitCentre: null,
     entries: {},
-    costCenters: [],
     saving: false,
   };
 
   async componentDidMount() {
+    this.monthArray = generateMonthArray();
     await this.setFilters();
   }
 
@@ -87,16 +93,10 @@ class ForecastMatrix extends React.Component {
     const { financialYear, profitCentre } = this.state;
     if (!(financialYear && profitCentre)) return;
 
-    const { ForecastEntry, ForecastElement, CostCenter } = this.props.$models;
+    const { ForecastEntry, ForecastElement } = this.props.$models;
 
-    // Find all related cost centers
-    const costCenters = await CostCenter.findAll({
-      where: {
-        profitCentre_id: this.state.profitCentre.id,
-      },
-    });
-
-    const entries_array = await ForecastEntry.findAll({
+    // Find all related entries
+    const entriesArray = await ForecastEntry.findAll({
       include: [
         { as: 'profitCentre' },
         { as: 'costCentre' },
@@ -116,12 +116,12 @@ class ForecastMatrix extends React.Component {
     const oh_elements = [];
 
     const entries = {};
-    for (let entry of entries_array) {
+    for (const entry of entriesArray) {
       const key = getEntryKey(entry);
       entries[key] = entry;
     }
 
-    for (let element of elements) {
+    for (const element of elements) {
       switch (element.elementType) {
         case '1':
           cos_elements.push(element);
@@ -136,16 +136,22 @@ class ForecastMatrix extends React.Component {
       }
 
       // Create new entries for empty cells
-      for (let month of months) {
-        const key = getForecastEntryKey(financialYear, month, element.id);
-        entries[key] = entries[key] || newEntry(financialYear, month, element);
-      }
+      this.monthArray.forEach(month => {
+        const key = getForecastEntryKey(
+          financialYear,
+          month.financialMonth,
+          element.id,
+          true,
+        );
+        entries[key] =
+          entries[key] ||
+          newEntry(financialYear, month.financialMonth, element);
+      });
     }
 
     await this.setState({
       loading: false,
       entries,
-      costCenters,
       elements,
       cos_elements,
       rev_elements,
@@ -158,7 +164,7 @@ class ForecastMatrix extends React.Component {
     const key = getEntryKey(entry);
     const revisedEntry = {};
     const sign = amt.includes('-') ? '-' : '';
-    let amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
+    const amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
     revisedEntry[key] = { ...this.state.entries[key], amount, changed: true };
     const entries = { ...this.state.entries, ...revisedEntry };
     this.setState({
@@ -166,110 +172,6 @@ class ForecastMatrix extends React.Component {
       totals: this.calcTotals(entries),
     });
   };
-
-  renderRow = element => {
-    let disabled = false;
-    switch (element.key) {
-      case 'SAL':
-      case 'TMREV':
-      case 'CWAGES':
-        disabled = true;
-        break;
-      default:
-    }
-
-    return (
-      <Row>
-        <RowLabel>
-          <span>{element.name}</span>
-        </RowLabel>
-        {months.map(month => this.renderCell(month, element, disabled))}
-      </Row>
-    );
-  };
-
-  renderCell = (month, element, disabled = false) => {
-    const key = getForecastEntryKey(
-      this.state.financialYear,
-      month,
-      element.id,
-    );
-    const entry = this.state.entries[key];
-    if (!entry) return <Cell> ... </Cell>;
-
-    return (
-      <Cell>
-        <Input
-          disabled={disabled}
-          value={+entry.amount !== 0 ? entry.amount : ''}
-          onChange={event => this.handleCellChange(entry, event.target.value)}
-        />
-      </Cell>
-    );
-  };
-
-  // Calculate all rows that need to, update db, reload data and calculate total
-  calculateRows = async () => {
-    this.setState({ saving: true });
-
-    const { profitCentre, financialYear } = this.state;
-
-    await calculateForecast({
-      $models: this.props.$models,
-      financialYear,
-      profitCentreIds: [profitCentre.id],
-    });
-
-    await this.loadData();
-
-    await this.setState(state => ({
-      totals: this.calcTotals(state.entries),
-      saving: false,
-    }));
-  };
-
-  calcTotals = entries => {
-    const tot = getZeroTotals(months);
-
-    for (let key of Object.keys(entries)) {
-      const entry = entries[key];
-      if (entry.forecastElement) {
-        const amt = Number(entry.amount);
-        if (amt !== 0) {
-          switch (entry.forecastElement.elementType) {
-            case '1':
-              tot.cos[entry.financialMonth] += amt;
-              tot.gp[entry.financialMonth] += -amt;
-              tot.np[entry.financialMonth] += -amt;
-              break;
-            case '2':
-              tot.rev[entry.financialMonth] += amt;
-              tot.gp[entry.financialMonth] += amt;
-              tot.np[entry.financialMonth] += amt;
-              break;
-            case '3':
-              tot.oh[entry.financialMonth] += amt;
-              tot.np[entry.financialMonth] += -amt;
-              break;
-            default:
-            // do nothing
-          }
-        }
-      }
-    }
-    return tot;
-  };
-
-  renderTotal = (month, key) => (
-    <TotalCell>{this.state.totals[key][month]}</TotalCell>
-  );
-
-  renderTotals = (key, label) => (
-    <RowSubTotal>
-      <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
-      {months.map(month => this.renderTotal(month, key))}
-    </RowSubTotal>
-  );
 
   save = async () => {
     this.setState({ saving: true });
@@ -306,6 +208,136 @@ class ForecastMatrix extends React.Component {
     this.setState({ saving: false });
   };
 
+  // Calculate all rows that need to, update db, reload data and calculate total
+  calculateRows = async () => {
+    this.setState({ saving: true });
+
+    const { profitCentre, financialYear } = this.state;
+
+    await calculateForecast({
+      $models: this.props.$models,
+      financialYear,
+      profitCentreIds: [profitCentre.id],
+    });
+
+    await this.loadData();
+
+    await this.setState(state => ({
+      totals: this.calcTotals(state.entries),
+      saving: false,
+    }));
+  };
+
+  calcTotals = entries => {
+    const tot = this.getZeroTotals();
+
+    for (const key of Object.keys(entries)) {
+      const entry = entries[key];
+      if (entry.forecastElement) {
+        const amt = Number(entry.amount);
+        if (amt !== 0) {
+          switch (entry.forecastElement.elementType) {
+            case '1':
+              tot.cos[entry.financialMonth] += amt;
+              tot.gp[entry.financialMonth] += -amt;
+              tot.np[entry.financialMonth] += -amt;
+              break;
+            case '2':
+              tot.rev[entry.financialMonth] += amt;
+              tot.gp[entry.financialMonth] += amt;
+              tot.np[entry.financialMonth] += amt;
+              break;
+            case '3':
+              tot.oh[entry.financialMonth] += amt;
+              tot.np[entry.financialMonth] += -amt;
+              break;
+            default:
+            // do nothing
+          }
+        }
+      }
+    }
+    return tot;
+  };
+
+  getZeroTotals = () => {
+    const t = {
+      cos: {},
+      rev: {},
+      oh: {},
+      gp: {},
+      np: {},
+    };
+
+    this.monthArray.forEach(({ financialMonth }) => {
+      t.cos[financialMonth] = 0.0;
+      t.rev[financialMonth] = 0.0;
+      t.oh[financialMonth] = 0.0;
+      t.gp[financialMonth] = 0.0;
+      t.np[financialMonth] = 0.0;
+    });
+
+    return t;
+  };
+
+  renderRow = element => {
+    let disabled = false;
+    switch (element.key) {
+      case 'SAL':
+      case 'TMREV':
+      case 'CWAGES':
+        disabled = true;
+        break;
+      default:
+    }
+
+    return (
+      <Row>
+        <RowLabel>
+          <span>{element.name}</span>
+        </RowLabel>
+        {this.monthArray.map(month =>
+          this.renderCell(month.financialMonth, element, disabled),
+        )}
+      </Row>
+    );
+  };
+
+  renderCell = (financialMonth, element, disabled = false) => {
+    const key = getForecastEntryKey(
+      this.state.financialYear,
+      financialMonth,
+      element.id,
+      true,
+    );
+    const entry = this.state.entries[key];
+    let value = entry && entry.amount;
+    if (+value === 0) value = ''; // Don't show 0 in the table
+
+    return (
+      <Cell>
+        <Input
+          disabled={disabled}
+          value={value}
+          onChange={event => this.handleCellChange(entry, event.target.value)}
+        />
+      </Cell>
+    );
+  };
+
+  renderTotal = (month, key) => (
+    <TotalCell>{this.state.totals[key][month]}</TotalCell>
+  );
+
+  renderTotals = (key, label) => (
+    <RowSubTotal>
+      <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
+      {this.monthArray.map(month =>
+        this.renderTotal(month.financialMonth, key),
+      )}
+    </RowSubTotal>
+  );
+
   render() {
     const { loading, saving, profitCentre, financialYear } = this.state;
 
@@ -332,9 +364,9 @@ class ForecastMatrix extends React.Component {
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {monthLabels.map(monthLabel => (
+          {this.monthArray.map(({ label }) => (
             <Cell>
-              <HeaderLabel>{monthLabel}</HeaderLabel>{' '}
+              <HeaderLabel>{label}</HeaderLabel>{' '}
             </Cell>
           ))}
         </HeaderRow>
@@ -415,44 +447,6 @@ const Input = styled.input`
     border-bottom: 1px solid gray;
   }
 `;
-
-const getEntryKey = entry =>
-  getForecastEntryKey(
-    entry.financialYear,
-    entry.financialMonth,
-    entry.forecastElement_id,
-  );
-
-const newEntry = (financialYear, month, element, amount) => {
-  return {
-    newRecord: true,
-    financialYear,
-    financialMonth: month,
-    forecastElement_id: element.id,
-    forecastElement: element,
-    amount: amount || '',
-  };
-};
-
-const getZeroTotals = () => {
-  const t = {
-    cos: {},
-    rev: {},
-    oh: {},
-    gp: {},
-    np: {},
-  };
-
-  for (let month of months) {
-    t.cos[month] = 0.0;
-    t.rev[month] = 0.0;
-    t.oh[month] = 0.0;
-    t.gp[month] = 0.0;
-    t.np[month] = 0.0;
-  }
-
-  return t;
-};
 
 const Container = styled.div`
   ${props =>

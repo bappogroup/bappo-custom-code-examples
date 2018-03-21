@@ -3,45 +3,38 @@ import moment from 'moment';
 import { styled } from 'bappo-components';
 import { getForecastEntryKey } from 'utils';
 
-const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-const monthLabels = [
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-];
-
 class ForecastMatrix extends React.Component {
   state = {
     loading: true,
-    profitCentre: null,
-    entries: {},
-    months: [],
+    forecastTypes: [],
+    entries: {}, // ProjectForecastEntry map
+    financialYear: null, // Which financial year is being viewed now (project might last over one financial year)
+    months: [], // lasting months of the project, e.g. [{ year: 2018, month: 0}] for Jan 2018
+    totals: null,
   };
 
-  async componentDidMount() {
+  async componentWillMount() {
+    const forecastTypes = this.props.$models.ProjectForecastEntry.fields
+      .find(field => field.name === 'forecastType')
+      .properties.options.map(option => option.label);
+    this.setState(state => ({
+      ...state,
+      forecastTypes,
+    }));
     await this.setFilters();
   }
 
   // Bring up a popup asking which profit centre and time slot
   setFilters = async () => {
     const { $models, $popup } = this.props;
-    const { project, financialYear } = this.state;
+    const { project } = this.state;
 
     const projects = await $models.Project.findAll({
       limit: 1000,
     });
 
     const projectOptions = projects.reduce((arr, pro) => {
-      if (pro.projectType === '3')
+      if (pro.projectType === '3') {
         return [
           ...arr,
           {
@@ -49,6 +42,7 @@ class ForecastMatrix extends React.Component {
             label: pro.name,
           },
         ];
+      }
       return arr;
     }, []);
 
@@ -68,9 +62,9 @@ class ForecastMatrix extends React.Component {
         projectId: project && project.id,
       },
       onSubmit: async ({ projectId }) => {
-        const project = projects.find(p => p.id === projectId);
+        const chosenProject = projects.find(p => p.id === projectId);
         await this.setState({
-          project,
+          project: chosenProject,
         });
         await this.loadData();
       },
@@ -85,18 +79,23 @@ class ForecastMatrix extends React.Component {
     const months = [];
 
     // Get months for this project
-    let startDate = moment(project.startDate);
+    const startDate = moment(project.startDate);
     const endDate = moment(project.endDate);
+    const financialYear = startDate.year();
+
     while (
       endDate > startDate ||
       startDate.format('M') === endDate.format('M')
     ) {
-      months.push(startDate.month());
+      months.push({
+        year: startDate.year(),
+        month: startDate.month(),
+      });
       startDate.add(1, 'month');
     }
 
     // Build entry map
-    const entries_array = await ProjectForecastEntry.findAll({
+    const entriesArray = await ProjectForecastEntry.findAll({
       limit: 100000,
       where: {
         project_id: project.id,
@@ -104,68 +103,20 @@ class ForecastMatrix extends React.Component {
     });
 
     const entries = {};
-    for (let entry of entries_array) {
+    entriesArray.forEach(entry => {
       const key = getForecastEntryKey(
         entry.financialYear,
         entry.financialMonth,
         entry.forecastType,
+        true,
       );
       entries[key] = entry;
-    }
+    });
 
-    //   for (let element of elements) {
-    //     if (element.key) {
-    //       switch (element.key) {
-    //         case 'SAL':
-    //           consultantSalariesElement = element;
-    //           break;
-    //         case 'TMREV':
-    //           serviceRevenueElement = element;
-    //           break;
-    //         case 'CWAGES':
-    //           contractorWagesElement = element;
-    //           break;
-    //         default:
-    //       }
-    //     } else {
-    //       // other elements
-    //       switch (element.elementType) {
-    //         case '1':
-    //           cos_elements.push(element);
-    //           break;
-    //         case '2':
-    //           rev_elements.push(element);
-    //           break;
-    //         case '3':
-    //           oh_elements.push(element);
-    //           break;
-    //         default:
-    //       }
-    //     }
-
-    //     // Create new entries for empty cells
-    //     for (let month of months) {
-    //       const key = getForecastEntryKey(financialYear, month, element.id);
-    //       entries[key] = entries[key] || newEntry(financialYear, month, element);
-    //     }
-    //   }
-
-    //   await this.setState({
-    //     loading: false,
-    //     entries,
-    //     costCenters,
-    //     elements,
-    //     cos_elements,
-    //     rev_elements,
-    //     oh_elements,
-    //     serviceRevenueElement,
-    //     consultantSalariesElement,
-    //     contractorWagesElement,
-    //     totals: this.calcTotals(entries),
-    //   });
     await this.setState({
       loading: false,
       entries,
+      financialYear,
       months,
     });
   };
@@ -183,31 +134,47 @@ class ForecastMatrix extends React.Component {
   //   });
   // };
 
-  // renderRow = element => {
-  //   return (
-  //     <Row>
-  //       <RowLabel>
-  //         <span>{element.name}</span>
-  //       </RowLabel>
-  //       {months.map(month => this.renderCell(month, element))}
-  //     </Row>
-  //   );
-  // };
+  calculateMargins = entries => {
+    const entiresWithMargins = Object.assign({}, entries);
 
-  renderCell = (month, element, disabled = false) => {
-    const key = getForecastEntryKey(
-      this.state.financialYear,
-      month,
-      element.id,
-    );
+    this.state.months.forEach(month => {
+      const key = getForecastEntryKey(month.year, month.month, 'Margin');
+      const margin =
+        entries[getForecastEntryKey(month.year, month.month, 'Revenue')] -
+        entries[
+          getForecastEntryKey(month.year, month.month, 'Cost from Roster')
+        ];
+
+      entiresWithMargins[key] = {
+        financialYear: month.year,
+        financialMonth: month.month,
+        amount: margin,
+      };
+    });
+
+    return entiresWithMargins;
+  };
+
+  renderRow = type => (
+    <Row>
+      <RowLabel>
+        <span>{type}</span>
+      </RowLabel>
+      {this.state.months.map(month => this.renderCell(month, type))}
+    </Row>
+  );
+
+  renderCell = (month, type, disabled = false) => {
+    const key = getForecastEntryKey(month.year, month.month, type);
     const entry = this.state.entries[key];
-    if (!entry) return <Cell> ... </Cell>;
+    let value = entry && entry.amount;
+    if (+value === 0) value = ''; // Don't show 0 in the table
 
     return (
       <Cell>
         <Input
           disabled={disabled}
-          value={+entry.amount !== 0 ? entry.amount : ''}
+          value={value}
           onChange={event => this.handleCellChange(entry, event.target.value)}
         />
       </Cell>
@@ -234,40 +201,15 @@ class ForecastMatrix extends React.Component {
   //   }));
   // };
 
-  // calcTotals = entries => {
-  //   const tot = getZeroTotals(months);
-
-  //   for (let key of Object.keys(entries)) {
-  //     const entry = entries[key];
-  //     if (entry.forecastElement) {
-  //       const amt = Number(entry.amount);
-  //       if (amt !== 0) {
-  //         switch (entry.forecastElement.elementType) {
-  //           case '1':
-  //             tot.cos[entry.financialMonth] += amt;
-  //             tot.gp[entry.financialMonth] += -amt;
-  //             tot.np[entry.financialMonth] += -amt;
-  //             break;
-  //           case '2':
-  //             tot.rev[entry.financialMonth] += amt;
-  //             tot.gp[entry.financialMonth] += amt;
-  //             tot.np[entry.financialMonth] += amt;
-  //             break;
-  //           case '3':
-  //             tot.oh[entry.financialMonth] += amt;
-  //             tot.np[entry.financialMonth] += -amt;
-  //             break;
-  //           default:
-  //           // do nothing
-  //         }
-  //       }
-  //     }
-  //   }
-  //   return tot;
-  // };
-
   render() {
-    const { loading, saving, project, months } = this.state;
+    const {
+      loading,
+      saving,
+      project,
+      financialYear,
+      months,
+      forecastTypes,
+    } = this.state;
 
     if (!project) {
       return (
@@ -281,25 +223,35 @@ class ForecastMatrix extends React.Component {
       return <Loading>Loading...</Loading>;
     }
 
+    console.log(this.state);
     return (
       <Container saving={saving}>
         <HeaderContainer>
-          <Heading>Project: {project.name}</Heading>
+          <Heading>
+            Project: {project.name}, financial year: {financialYear}
+          </Heading>
           <TextButton onClick={this.setFilters}>change</TextButton>
           <TextButton onClick={this.calculateRows}>calculate</TextButton>
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {months.map(month => (
-            <Cell>
-              <HeaderLabel>
-                {moment()
-                  .month(month)
-                  .format('MMM')}
-              </HeaderLabel>
-            </Cell>
-          ))}
+          {months.map(month => {
+            // Only display months of one financial year
+            if (month.year === financialYear) {
+              return (
+                <Cell>
+                  <HeaderLabel>
+                    {moment()
+                      .month(month.month)
+                      .format('MMM')}
+                  </HeaderLabel>
+                </Cell>
+              );
+            }
+            return null;
+          })}
         </HeaderRow>
+        {forecastTypes.map(this.renderRow)}
         <SaveButton onClick={this.save}> Save </SaveButton>
       </Container>
     );
@@ -362,25 +314,25 @@ const Input = styled.input`
   }
 `;
 
-const getZeroTotals = () => {
-  const t = {
-    cos: {},
-    rev: {},
-    oh: {},
-    gp: {},
-    np: {},
-  };
+// const getZeroTotals = () => {
+//   const t = {
+//     cos: {},
+//     rev: {},
+//     oh: {},
+//     gp: {},
+//     np: {},
+//   };
 
-  for (let month of months) {
-    t.cos[month] = 0.0;
-    t.rev[month] = 0.0;
-    t.oh[month] = 0.0;
-    t.gp[month] = 0.0;
-    t.np[month] = 0.0;
-  }
+//   for (let month of months) {
+//     t.cos[month] = 0.0;
+//     t.rev[month] = 0.0;
+//     t.oh[month] = 0.0;
+//     t.gp[month] = 0.0;
+//     t.np[month] = 0.0;
+//   }
 
-  return t;
-};
+//   return t;
+// };
 
 const Container = styled.div`
   ${props =>

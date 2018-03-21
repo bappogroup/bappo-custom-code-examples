@@ -8,9 +8,12 @@
   ],
   "rules": {
     "arrow-parens": ["off"],
+    "max-len": "off",
     "react/jsx-filename-extension": ["off"],
     "react/prop-types": ["off"],
     "import/no-unresolved": ["off"],
-    "import/extensions": ["off"]
+    "import/extensions": ["off"],
+    "no-plusplus": "off",
+    "no-restricted-syntax": "off"
   }
 }

@@ -4,28 +4,26 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import {
+  calculateForecast,
   getCurrentFinancialYear,
   getForecastEntryKey,
-  calculateForecast,
+  generateMonthArray,
 } from 'utils';
 
-const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-const monthLabels = [
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-];
+const newEntry = (financialYear, month, element, amount) => {
+  return {
+    newRecord: true,
+    financialYear,
+    financialMonth: month,
+    forecastElement_id: element.id,
+    forecastElement: element,
+    amount: amount || '',
+  };
+};
 
 class ForecastMatrix extends React.Component {
+  monthArray = [];
+
   state = {
     loading: true,
     financialYear: null,
@@ -37,6 +35,7 @@ class ForecastMatrix extends React.Component {
   };
 
   async componentDidMount() {
+    this.monthArray = generateMonthArray();
     await this.setFilters();
   }
 
@@ -134,6 +133,7 @@ class ForecastMatrix extends React.Component {
         entry.financialYear,
         entry.financialMonth,
         entry.forecastElement_id,
+        true,
       );
 
       if (!entries[key]) {
@@ -166,10 +166,17 @@ class ForecastMatrix extends React.Component {
       }
 
       // Create new entries for empty cells
-      for (let month of months) {
-        const key = getForecastEntryKey(financialYear, month, element.id);
-        entries[key] = entries[key] || newEntry(financialYear, month, element);
-      }
+      this.monthArray.forEach(month => {
+        const key = getForecastEntryKey(
+          financialYear,
+          month.financialMonth,
+          element.id,
+          true,
+        );
+        entries[key] =
+          entries[key] ||
+          newEntry(financialYear, month.financialMonth, element);
+      });
     }
 
     // Find all related cost centers, for later use
@@ -194,22 +201,45 @@ class ForecastMatrix extends React.Component {
     });
   };
 
+  getZeroTotals = () => {
+    const t = {
+      cos: {},
+      rev: {},
+      oh: {},
+      gp: {},
+      np: {},
+    };
+
+    this.monthArray.forEach(({ financialMonth }) => {
+      t.cos[financialMonth] = 0.0;
+      t.rev[financialMonth] = 0.0;
+      t.oh[financialMonth] = 0.0;
+      t.gp[financialMonth] = 0.0;
+      t.np[financialMonth] = 0.0;
+    });
+
+    return t;
+  };
+
   renderRow = element => {
     return (
       <Row>
         <RowLabel>
           <span>{element.name}</span>
         </RowLabel>
-        {months.map(month => this.renderCell(month, element))}
+        {this.monthArray.map(month =>
+          this.renderCell(month.financialMonth, element),
+        )}
       </Row>
     );
   };
 
-  renderCell = (month, element, disabled = false) => {
+  renderCell = (financialMonth, element) => {
     const key = getForecastEntryKey(
       this.state.financialYear,
-      month,
+      financialMonth,
       element.id,
+      true,
     );
     const entry = this.state.entries[key];
 
@@ -243,9 +273,9 @@ class ForecastMatrix extends React.Component {
   };
 
   calcTotals = entries => {
-    const tot = getZeroTotals(months);
+    const tot = this.getZeroTotals();
 
-    for (let key of Object.keys(entries)) {
+    for (const key of Object.keys(entries)) {
       const entry = entries[key];
       if (entry.forecastElement) {
         const amt = Number(entry.amount);
@@ -281,7 +311,9 @@ class ForecastMatrix extends React.Component {
   renderTotals = (key, label) => (
     <RowSubTotal>
       <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
-      {months.map(month => this.renderTotal(month, key))}
+      {this.monthArray.map(month =>
+        this.renderTotal(month.financialMonth, key),
+      )}
     </RowSubTotal>
   );
 
@@ -311,9 +343,9 @@ class ForecastMatrix extends React.Component {
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {monthLabels.map(monthLabel => (
+          {this.monthArray.map(({ label }) => (
             <Cell>
-              <HeaderLabel>{monthLabel}</HeaderLabel>{' '}
+              <HeaderLabel>{label}</HeaderLabel>{' '}
             </Cell>
           ))}
         </HeaderRow>
@@ -378,37 +410,6 @@ const HeaderLabel = styled.div`
   text-align: center;
   flex: 1;
 `;
-
-const newEntry = (financialYear, month, element, amount) => {
-  return {
-    newRecord: true,
-    financialYear,
-    financialMonth: month,
-    forecastElement_id: element.id,
-    forecastElement: element,
-    amount: amount || '',
-  };
-};
-
-const getZeroTotals = () => {
-  const t = {
-    cos: {},
-    rev: {},
-    oh: {},
-    gp: {},
-    np: {},
-  };
-
-  for (let month of months) {
-    t.cos[month] = 0.0;
-    t.rev[month] = 0.0;
-    t.oh[month] = 0.0;
-    t.gp[month] = 0.0;
-    t.np[month] = 0.0;
-  }
-
-  return t;
-};
 
 const Container = styled.div`
   ${props =>
