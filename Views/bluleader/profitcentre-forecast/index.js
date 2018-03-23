@@ -5,17 +5,9 @@ import utils from 'utils';
 const {
   calculateForecast,
   getForecastEntryKey,
-  getCurrentFinancialYear,
+  getFinancialYear,
   generateMonthArray,
 } = utils;
-
-const getEntryKey = entry =>
-  getForecastEntryKey(
-    entry.financialYear,
-    entry.financialMonth,
-    entry.forecastElement_id,
-    true,
-  );
 
 const newEntry = (financialYear, financialMonth, element, amount) => {
   return {
@@ -78,7 +70,7 @@ class ForecastMatrix extends React.Component {
       ],
       initialValues: {
         profitCentreId: profitCentre && profitCentre.id,
-        financialYear: financialYear || getCurrentFinancialYear(),
+        financialYear: financialYear || getFinancialYear(),
       },
       onSubmit: async ({ profitCentreId, financialYear }) => {
         const profitCentre = profitCentres.find(pc => pc.id === profitCentreId);
@@ -119,7 +111,12 @@ class ForecastMatrix extends React.Component {
 
     const entries = {};
     for (const entry of entriesArray) {
-      const key = getEntryKey(entry);
+      const key = getForecastEntryKey(
+        entry.financialYear,
+        entry.financialMonth,
+        entry.forecastElement_id,
+        true,
+      );
       entries[key] = entry;
     }
 
@@ -163,7 +160,12 @@ class ForecastMatrix extends React.Component {
   };
 
   handleCellChange = (entry, amt) => {
-    const key = getEntryKey(entry);
+    const key = getForecastEntryKey(
+      entry.financialYear,
+      entry.financialMonth,
+      entry.forecastElement_id,
+      true,
+    );
     const revisedEntry = {};
     const sign = amt.includes('-') ? '-' : '';
     const amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
@@ -368,6 +370,7 @@ class ForecastMatrix extends React.Component {
           <RowLabel />
           {this.monthArray.map(({ label }) => (
             <Cell>
+              {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
             </Cell>
           ))}
@@ -423,6 +426,7 @@ const RowLabel = styled.div`
 `;
 
 const Cell = styled.div`
+  position: relative;
   padding-left: 1px;
   padding-right: 1px;
   display: flex;
@@ -508,4 +512,11 @@ const TextButton = styled.span`
 
 const Heading = styled.div`
   font-size: 18px;
+`;
+
+const YearLabel = styled.div`
+  position: absolute;
+  bottom: 20px;
+  font-weight: lighter;
+  font-size: 12px;
 `;

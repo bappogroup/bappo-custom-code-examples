@@ -8,7 +8,7 @@ import utils from 'utils';
 const {
   calculateForecast,
   getForecastEntryKey,
-  getCurrentFinancialYear,
+  getFinancialYear,
   generateMonthArray,
 } = utils;
 
@@ -75,7 +75,7 @@ class ForecastMatrix extends React.Component {
       ],
       initialValues: {
         companyId: company && company.id,
-        financialYear: financialYear || getCurrentFinancialYear(),
+        financialYear: financialYear || getFinancialYear(),
       },
       onSubmit: async ({ companyId, financialYear }) => {
         const company = companies.find(com => com.id === companyId);
@@ -347,6 +347,7 @@ class ForecastMatrix extends React.Component {
           <RowLabel />
           {this.monthArray.map(({ label }) => (
             <Cell>
+              {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
             </Cell>
           ))}
@@ -400,6 +401,7 @@ const RowLabel = styled.div`
 `;
 
 const Cell = styled.div`
+  position: relative;
   padding-left: 1px;
   padding-right: 1px;
   display: flex;
@@ -456,4 +458,11 @@ const TextButton = styled.span`
 
 const Heading = styled.div`
   font-size: 18px;
+`;
+
+const YearLabel = styled.div`
+  position: absolute;
+  bottom: 20px;
+  font-weight: lighter;
+  font-size: 12px;
 `;

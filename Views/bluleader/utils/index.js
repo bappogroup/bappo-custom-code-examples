@@ -27,6 +27,19 @@ const getForecastEntryKey = (
   return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
 };
 
+/**
+ * Generate a unique key for a forecast entry in a table.
+ *
+ * @param {string} date - a date that moment can parse, e.g. '2018-03-03'
+ * @param {string} rowIdentifier - a string identifying a row in the table
+ * @return {string} entry key
+ */
+const getForecastEntryKeyByDate = (date, rowIdentifier) => {
+  const calendarYear = moment(date).year();
+  const calendarMonth = moment(date).month() + 1;
+  return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
+};
+
 // Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
 // And update the forecast entrie records
 const calculateServiceRevenueAndContractorWages = async ({
@@ -112,10 +125,10 @@ const calculateServiceRevenueAndContractorWages = async ({
       amount: 0, // amount is cleared, to recalculate
     };
 
-    forecastEntries[key1] = Object.assign(entryTemplate, {
+    forecastEntries[key1] = Object.assign({}, entryTemplate, {
       forecastElement_id: serviceRevenueElementId,
     });
-    forecastEntries[key2] = Object.assign(entryTemplate, {
+    forecastEntries[key2] = Object.assign({}, entryTemplate, {
       forecastElement_id: contractorWagesElementId,
     });
   }
@@ -136,11 +149,11 @@ const calculateServiceRevenueAndContractorWages = async ({
       date: {
         $between: [
           moment({
-            year: financialYear - 1,
+            year: financialYear,
             month: 6,
           }).toDate(),
           moment({
-            year: financialYear,
+            year: financialYear + 1,
             month: 6,
           }).toDate(),
         ],
@@ -172,7 +185,7 @@ const calculateServiceRevenueAndContractorWages = async ({
     // Find roster entries that incur 'Contractor Wages', and update forecast entries for that element
     // Conditions are:
     // - prob >= 50%,
-    // - project type === 2 ('billing')
+    // - project type === 2 ('T&M')
     // - consultant type === 2 ('Contractor')
     const probability = _.get(rosterEntry, 'probability.name');
     if (
@@ -261,16 +274,7 @@ const calculateConsultantSalaries = async ({
           ? +consultant.annualSalary / 12
           : 0;
 
-        // Convert financialMonth to calendar month
-        // let calendarMonth = i + time.fiscalOffset;
-        // let calendarYear = financialYear;
-
-        // if (calendarMonth > 12) {
-        //   calendarMonth -= 12;
-        // } else {
-        //   calendarYear -= 1;
-        // }
-        // calendarMonth = ('0' + calendarMonth).slice(-2);
+        // Convert financial to calendar
         const { calendarYear, calendarMonth } = time.financialToCalendar({
           financialYear,
           financialMonth: i,
@@ -343,5 +347,6 @@ const calculateForecast = async ({
 
 export default Object.assign(time, {
   getForecastEntryKey,
+  getForecastEntryKeyByDate,
   calculateForecast,
 });

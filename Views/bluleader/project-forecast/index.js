@@ -3,26 +3,46 @@ import moment from 'moment';
 import { styled } from 'bappo-components';
 import utils from 'utils';
 
-const { getForecastEntryKey } = utils;
+const {
+  getForecastEntryKey,
+  getForecastEntryKeyByDate,
+  getFinancialYear,
+  monthCalendarToFinancial,
+} = utils;
+
+const forecastTypeLabelToValue = label => {
+  switch (label.toString()) {
+    case 'Cost':
+      return '1';
+    case 'Revenue':
+      return '2';
+    default:
+      return null;
+  }
+};
+
+const forecastTypeValueToLabel = value => {
+  switch (value.toString()) {
+    case '1':
+      return 'Cost';
+    case '2':
+      return 'Revenue';
+    default:
+      return null;
+  }
+};
 
 class ForecastMatrix extends React.Component {
   state = {
     loading: true,
-    forecastTypes: [],
+    costTypes: ['Cost'],
+    revenueTypes: ['Revenue'],
     entries: {}, // ProjectForecastEntry map
     financialYear: null, // Which financial year is being viewed now (project might last over one financial year)
-    months: [], // lasting months of the project, e.g. [{ year: 2018, month: 0}] for Jan 2018
-    totals: null,
+    months: [], // lasting months of the project, e.g. [{ calendarMonth: 2018, calendarMonth: 1}] for Jan 2018
   };
 
   async componentWillMount() {
-    const forecastTypes = this.props.$models.ProjectForecastEntry.fields
-      .find(field => field.name === 'forecastType')
-      .properties.options.map(option => option.label);
-    this.setState(state => ({
-      ...state,
-      forecastTypes,
-    }));
     await this.setFilters();
   }
 
@@ -32,10 +52,11 @@ class ForecastMatrix extends React.Component {
     const { project } = this.state;
 
     const projects = await $models.Project.findAll({
-      limit: 1000,
+      limit: 10000,
     });
 
     const projectOptions = projects.reduce((arr, pro) => {
+      // Only list 'Fixed Price' projects
       if (pro.projectType === '3') {
         return [
           ...arr,
@@ -74,27 +95,56 @@ class ForecastMatrix extends React.Component {
   };
 
   loadData = async () => {
-    const { project } = this.state;
+    const { project, costTypes, revenueTypes } = this.state;
     if (!project) return;
 
-    const { Project, ProjectForecastEntry } = this.props.$models;
+    const { ProjectForecastEntry, RosterEntry } = this.props.$models;
     const months = [];
+    const entries = {};
 
     // Get months for this project
     const startDate = moment(project.startDate);
     const endDate = moment(project.endDate);
-    const financialYear = startDate.year();
+    const financialYear = getFinancialYear(startDate);
 
     while (
       endDate > startDate ||
       startDate.format('M') === endDate.format('M')
     ) {
       months.push({
-        year: startDate.year(),
-        month: startDate.month(),
+        calendarYear: startDate.year(),
+        calendarMonth: startDate.month() + 1,
       });
       startDate.add(1, 'month');
     }
+
+    // Calculate entries of the row 'Cost from Roster'
+    const rosterEntries = await RosterEntry.findAll({
+      where: {
+        project_id: project.id,
+      },
+      include: [{ as: 'consultant' }],
+      limit: 10000,
+    });
+
+    rosterEntries.forEach(rosterEntry => {
+      const key = getForecastEntryKeyByDate(
+        rosterEntry.date,
+        'Cost from Roster',
+      );
+      const dailyRate = rosterEntry.consultant.internalRate
+        ? +rosterEntry.consultant.internalRate
+        : 0;
+
+      // Only amount is used for entries in this row
+      if (!entries[key]) {
+        entries[key] = {
+          amount: dailyRate,
+        };
+      } else {
+        entries[key].amount += dailyRate;
+      }
+    });
 
     // Build entry map
     const entriesArray = await ProjectForecastEntry.findAll({
@@ -104,14 +154,36 @@ class ForecastMatrix extends React.Component {
       },
     });
 
-    const entries = {};
     entriesArray.forEach(entry => {
       const key = getForecastEntryKey(
         entry.financialYear,
         entry.financialMonth,
-        entry.forecastType,
+        forecastTypeValueToLabel(entry.forecastType),
+        true,
       );
       entries[key] = entry;
+    });
+
+    // Create new entries for empty cells
+    costTypes.concat(revenueTypes).forEach(type => {
+      months.forEach(month => {
+        const key = getForecastEntryKey(
+          month.calendarYear,
+          month.calendarMonth,
+          type,
+        );
+
+        if (!entries[key]) {
+          const financialMonth = monthCalendarToFinancial(month.calendarMonth);
+          entries[key] = {
+            forecastType: forecastTypeLabelToValue(type),
+            financialYear,
+            financialMonth,
+            project_id: project.id,
+            amount: 0,
+          };
+        }
+      });
     });
 
     await this.setState({
@@ -120,31 +192,60 @@ class ForecastMatrix extends React.Component {
       financialYear,
       months,
     });
+    this.calculateMargins();
   };
 
-  // handleCellChange = (entry, amt) => {
-  //   const key = getEntryKey(entry);
-  //   const revisedEntry = {};
-  //   const sign = amt.includes('-') ? '-' : '';
-  //   let amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
-  //   revisedEntry[key] = { ...this.state.entries[key], amount, changed: true };
-  //   const entries = { ...this.state.entries, ...revisedEntry };
-  //   this.setState({
-  //     entries,
-  //     totals: this.calcTotals(entries),
-  //   });
-  // };
+  handleCellChange = async (entry, amount) => {
+    const key = getForecastEntryKey(
+      entry.financialYear,
+      entry.financialMonth,
+      forecastTypeValueToLabel(entry.forecastType),
+      true,
+    );
 
-  calculateMargins = entries => {
+    await this.setState(state => {
+      const { entries } = state;
+      entries[key].amount = +amount;
+      return {
+        ...state,
+        entries: this.calculateMargins(entries),
+      };
+    });
+    this.calculateMargins();
+  };
+
+  calculateMargins = () => {
+    const { entries, months } = this.state;
     const entiresWithMargins = Object.assign({}, entries);
 
-    this.state.months.forEach(month => {
-      const key = getForecastEntryKey(month.year, month.month, 'Margin');
-      const margin =
-        entries[getForecastEntryKey(month.year, month.month, 'Revenue')] -
+    months.forEach(month => {
+      const key = getForecastEntryKey(
+        month.calendarYear,
+        month.calendarMonth,
+        'Margin',
+      );
+
+      const revenueEntry =
         entries[
-          getForecastEntryKey(month.year, month.month, 'Cost from Roster')
+          getForecastEntryKey(
+            month.calendarYear,
+            month.calendarMonth,
+            'Revenue',
+          )
         ];
+
+      const costFromRosterEntry =
+        entries[
+          getForecastEntryKey(
+            month.calendarYear,
+            month.calendarMonth,
+            'Cost from Roster',
+          )
+        ];
+
+      const margin =
+        +(revenueEntry && revenueEntry.amount) -
+        +(costFromRosterEntry && costFromRosterEntry.amount);
 
       entiresWithMargins[key] = {
         financialYear: month.year,
@@ -153,20 +254,75 @@ class ForecastMatrix extends React.Component {
       };
     });
 
-    return entiresWithMargins;
+    return this.setState(state => ({
+      ...state,
+      entries: entiresWithMargins,
+    }));
   };
 
-  renderRow = type => (
+  save = async () => {
+    this.setState({ saving: true });
+    const { ProjectForecastEntry } = this.props.$models;
+    const { project, financialYear, entries } = this.state;
+
+    // Delete old entries
+    // TODO: use $in when bug is fixed
+    await ProjectForecastEntry.destroy({
+      where: {
+        forecastType: '1',
+        project_id: project.id,
+        financialYear: financialYear.toString(),
+      },
+    });
+    await ProjectForecastEntry.destroy({
+      where: {
+        forecastType: '2',
+        project_id: project.id,
+        financialYear: financialYear.toString(),
+      },
+    });
+
+    const entriesToCreate = Object.values(entries).filter(
+      entry => entry.forecastType === '1' || entry.forecastType === '2',
+    );
+
+    await ProjectForecastEntry.bulkCreate(entriesToCreate);
+
+    this.setState({ saving: false });
+  };
+
+  renderMargins = () => {
+    return (
+      <RowSubTotal>
+        <RowLabel style={{ fontWeight: 'bold' }}>Margin</RowLabel>
+        {this.state.months.map(month => {
+          const key = getForecastEntryKey(
+            month.calendarYear,
+            month.calendarMonth,
+            'Margin',
+          );
+          const entry = this.state.entries[key];
+          return <TotalCell>{entry && entry.amount}</TotalCell>;
+        })}
+      </RowSubTotal>
+    );
+  };
+
+  renderRow = (type, disabled) => (
     <Row>
       <RowLabel>
         <span>{type}</span>
       </RowLabel>
-      {this.state.months.map(month => this.renderCell(month, type))}
+      {this.state.months.map(month => this.renderCell(month, type, disabled))}
     </Row>
   );
 
   renderCell = (month, type, disabled = false) => {
-    const key = getForecastEntryKey(month.year, month.month, type);
+    const key = getForecastEntryKey(
+      month.calendarYear,
+      month.calendarMonth,
+      type,
+    );
     const entry = this.state.entries[key];
     let value = entry && entry.amount;
     if (+value === 0) value = ''; // Don't show 0 in the table
@@ -182,26 +338,6 @@ class ForecastMatrix extends React.Component {
     );
   };
 
-  // // Calculate all rows that need to, update db, reload data and calculate total
-  // calculateRows = async () => {
-  //   this.setState({ saving: true });
-
-  //   const { profitCentre, financialYear } = this.state;
-
-  //   await calculateForecast({
-  //     $models: this.props.$models,
-  //     financialYear,
-  //     profitCentreIds: [profitCentre.id],
-  //   });
-
-  //   await this.loadData();
-
-  //   await this.setState(state => ({
-  //     totals: this.calcTotals(state.entries),
-  //     saving: false,
-  //   }));
-  // };
-
   render() {
     const {
       loading,
@@ -209,7 +345,8 @@ class ForecastMatrix extends React.Component {
       project,
       financialYear,
       months,
-      forecastTypes,
+      costTypes,
+      revenueTypes,
     } = this.state;
 
     if (!project) {
@@ -224,7 +361,7 @@ class ForecastMatrix extends React.Component {
       return <Loading>Loading...</Loading>;
     }
 
-    console.log(this.state);
+    console.log(this.state.entries);
     return (
       <Container saving={saving}>
         <HeaderContainer>
@@ -232,28 +369,33 @@ class ForecastMatrix extends React.Component {
             Project: {project.name}, financial year: {financialYear}
           </Heading>
           <TextButton onClick={this.setFilters}>change</TextButton>
-          <TextButton onClick={this.calculateRows}>calculate</TextButton>
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {months.map(month => {
+          {months.map((month, index) => {
+            return (
+              <Cell>
+                {(index === 0 || month.calendarMonth === 1) && (
+                  <YearLabel>{month.calendarYear}</YearLabel>
+                )}
+                <HeaderLabel>
+                  {moment()
+                    .month(month.calendarMonth - 1)
+                    .format('MMM')}
+                </HeaderLabel>
+              </Cell>
+            );
             // Only display months of one financial year
-            if (month.year === financialYear) {
-              return (
-                <Cell>
-                  <HeaderLabel>
-                    {moment()
-                      .month(month.month)
-                      .format('MMM')}
-                  </HeaderLabel>
-                </Cell>
-              );
-            }
-            return null;
+            // if (true || month.calendarYear === financialYear) {
+            // }
+            // return null;
           })}
         </HeaderRow>
-        {forecastTypes.map(this.renderRow)}
-        <SaveButton onClick={this.save}> Save </SaveButton>
+        {costTypes.map(this.renderRow)}
+        {this.renderRow('Cost from Roster', true)}
+        {revenueTypes.map(this.renderRow)}
+        {this.renderMargins()}
+        <SaveButton onClick={this.save}>Save</SaveButton>
       </Container>
     );
   }
@@ -288,6 +430,7 @@ const RowLabel = styled.div`
 `;
 
 const Cell = styled.div`
+  position: relative;
   padding-left: 1px;
   padding-right: 1px;
   display: flex;
@@ -393,4 +536,11 @@ const TextButton = styled.span`
 
 const Heading = styled.div`
   font-size: 18px;
+`;
+
+const YearLabel = styled.div`
+  position: absolute;
+  bottom: 20px;
+  font-weight: lighter;
+  font-size: 12px;
 `;
