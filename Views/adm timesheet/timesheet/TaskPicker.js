@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Select,
 } from 'bappo-components';
+import FlatButton from './FlatButton';
 
 class TaskPicker extends React.Component {
   state = {
@@ -108,13 +109,8 @@ const SelectLabel = styled(Text)`
   margin-bottom: 10px;
 `;
 
-const SubmitButton = styled(Button)`
-  background-color: dodgerblue;
-  color: white;
-  border-radius: 5px;
+const SubmitButton = styled(FlatButton)`
   width: 90px;
-  padding: 10px;
-  text-align: center;
   margin: 20px;
   align-self: flex-end;
 `;

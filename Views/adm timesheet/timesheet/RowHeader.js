@@ -36,6 +36,7 @@ const Cell = styled(Text)`
   flex: 1;
   display: flex;
   justify-content: center;
+  font-size: 18px;
 `;
 
 const Divider = styled(View)`

@@ -1,6 +1,6 @@
 import React from 'react';
 import moment from 'moment';
-import { styled, View, Text } from 'bappo-components';
+import { styled, View, Text, Button } from 'bappo-components';
 import { findOrCreateTimesheetByDate } from 'utils';
 import TimesheetHeader from './TimesheetHeader';
 import RowHeader from './RowHeader';
@@ -57,6 +57,9 @@ class TableView extends React.Component {
 
     return (
       <Container>
+        <HomeButton onPress={() => this.props.$navigation.navigate('_Home')}>
+          Home
+        </HomeButton>
         <TimesheetHeader timesheet={timesheet} changeWeek={this.changeWeek} />
         <RowHeader week={week} />
         <TaskRows timesheet={timesheet} employee={employee} {...this.props} />
@@ -68,3 +71,9 @@ class TableView extends React.Component {
 export default TableView;
 
 const Container = styled(View)``;
+
+const HomeButton = styled(Button)`
+  margin-top: 15px;
+  margin-left: 15px;
+  color: gray;
+`;

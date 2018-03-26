@@ -10,6 +10,7 @@ import {
 import { timesheetEntryFormConfig } from 'utils';
 import TaskPicker from './TaskPicker';
 import EntryDetails from './EntryDetails';
+import FlatButton from './FlatButton';
 
 class TaskRows extends React.Component {
   state = {
@@ -189,7 +190,7 @@ class TaskRows extends React.Component {
           >
             <DeleteButtonText>x</DeleteButtonText>
           </DeleteTaskButton>
-          <Text>{task.name}</Text>
+          <LargerText>{task.name}</LargerText>
         </RowCell>
         {Array.from({ length: 5 }, (v, i) => i + 1).map(dow => {
           const entry = this.state.entryMap[task.id][dow];
@@ -207,15 +208,15 @@ class TaskRows extends React.Component {
                   this.handleClickCell(entry && entry.id, dow, task.id)
                 }
               >
-                <Text>
+                <LargerText>
                   {typeof hourOfDay === 'undefined' ? 'Add' : hourOfDay}
-                </Text>
+                </LargerText>
               </StyledButton>
             </TaskCell>
           );
         })}
         <Cell>
-          <Text>{total}</Text>
+          <LargerText>{total}</LargerText>
         </Cell>
       </TaskRowContainer>
     );
@@ -228,7 +229,7 @@ class TaskRows extends React.Component {
     return (
       <TaskRowContainer>
         <Cell>
-          <Text>Total</Text>
+          <LargerText>Total</LargerText>
         </Cell>
         {Array.from({ length: 5 }, (v, i) => i + 1).map(dow => {
           let dayTotal = 0;
@@ -242,12 +243,12 @@ class TaskRows extends React.Component {
 
           return (
             <Cell key={`${dow}_total`}>
-              <Text>{dayTotal}</Text>
+              <LargerText>{dayTotal}</LargerText>
             </Cell>
           );
         })}
         <Cell>
-          <Text>{weekTotal}</Text>
+          <LargerText>{weekTotal}</LargerText>
         </Cell>
       </TaskRowContainer>
     );
@@ -262,9 +263,6 @@ class TaskRows extends React.Component {
     return (
       <Container>
         {Object.keys(tasks).map(taskId => this.renderTaskRow(tasks[taskId]))}
-        <NewTaskButton onPress={this.handleAddTask}>
-          <Text>New Task</Text>
-        </NewTaskButton>
         {this.renderTotalRow()}
         {selectedEntry && (
           <EntryDetails
@@ -275,6 +273,9 @@ class TaskRows extends React.Component {
             $popup={$popup}
           />
         )}
+        <NewTaskButton onPress={this.handleAddTask}>
+          <LargerText>New Task</LargerText>
+        </NewTaskButton>
       </Container>
     );
   }
@@ -325,7 +326,12 @@ const DeleteButtonText = styled(Text)`
   color: red;
 `;
 
-const NewTaskButton = styled(Button)`
-  width: 14.3%;
-  align-items: center;
+const LargerText = styled(Text)`
+  font-size: 18px;
+`;
+
+const NewTaskButton = styled(FlatButton)`
+  width: 100px;
+  margin: 30px;
+  align-self: center;
 `;
