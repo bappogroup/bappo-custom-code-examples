@@ -343,7 +343,6 @@ class ForecastMatrix extends React.Component {
       loading,
       saving,
       project,
-      financialYear,
       months,
       costTypes,
       revenueTypes,
@@ -361,13 +360,12 @@ class ForecastMatrix extends React.Component {
       return <Loading>Loading...</Loading>;
     }
 
+    // TODO: cell width and scrollable
     console.log(this.state.entries);
     return (
       <Container saving={saving}>
         <HeaderContainer>
-          <Heading>
-            Project: {project.name}, financial year: {financialYear}
-          </Heading>
+          <Heading>Project: {project.name}</Heading>
           <TextButton onClick={this.setFilters}>change</TextButton>
         </HeaderContainer>
         <HeaderRow>

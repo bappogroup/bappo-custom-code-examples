@@ -1,10 +1,10 @@
 import React from 'react';
 import moment from 'moment';
 import { styled, View, Text } from 'bappo-components';
+import { findOrCreateTimesheetByDate } from 'utils';
 import TimesheetHeader from './TimesheetHeader';
 import RowHeader from './RowHeader';
-import JobRows from './JobRows';
-import { getMonday } from './utils';
+import TaskRows from './TaskRows';
 
 class TableView extends React.Component {
   state = {
@@ -27,65 +27,39 @@ class TableView extends React.Component {
     if (!employee) return this.setState({ error: 'Employee not found' });
 
     const timesheet = await $models.Timesheet.findById(recordId, {
-      include: [{ as: 'consultant' }],
+      include: [{ as: 'employee' }, { as: 'week' }],
     });
 
-    // Change day of a week to Monday if needed
-    // timesheet.week = getMonday(timesheet.week);
-
-    return this.setState({ timesheet, employee });
+    return this.setState({ timesheet, employee, week: timesheet.week });
   }
 
   changeWeek = async (gapToNow, date) => {
     const { $navigation, $models } = this.props;
-    const { timesheet } = this.state;
+    const { timesheet, employee, week } = this.state;
 
-    const targetWeek = date
-      ? getMonday(date)
-      : moment(getMonday(timesheet.week))
-          .add(gapToNow, 'week')
-          .format('YYYY-MM-DD');
-
-    let targetTimesheet;
-    let templateTimesheetId;
-    targetTimesheet = await $models.Timesheet.findOne({
-      where: {
-        week: targetWeek,
-        consultant_id: timesheet.consultant_id,
-      },
-    });
-
-    if (!targetTimesheet) {
-      // create new time sheet
-      targetTimesheet = await $models.Timesheet.create({
-        week: targetWeek,
-        consultant_id: timesheet.consultant_id,
-      });
-      templateTimesheetId = timesheet.id;
-    }
+    const targetTimesheet = await findOrCreateTimesheetByDate(
+      $models,
+      employee.id,
+      moment(date || week.startDate).add(gapToNow, 'week'),
+    );
 
     // navigate to target week
-    $navigation.navigate('TimesheetDetailsPage', {
+    $navigation.navigate('MyTimesheetView', {
       recordId: targetTimesheet.id,
-      templateTimesheetId,
+      templateTimesheetId: timesheet.id,
     });
   };
 
   render() {
-    const { timesheet, consultant, error } = this.state;
+    const { timesheet, employee, week, error } = this.state;
+    if (error) return <Text style={{ margin: 20 }}>{error}</Text>;
     if (!timesheet) return null;
-
-    if (error) return <Text>{error}</Text>;
 
     return (
       <Container>
         <TimesheetHeader timesheet={timesheet} changeWeek={this.changeWeek} />
-        <RowHeader startDate={timesheet.week} />
-        <JobRows
-          timesheet={timesheet}
-          consultant={consultant}
-          {...this.props}
-        />
+        <RowHeader week={week} />
+        <TaskRows timesheet={timesheet} employee={employee} {...this.props} />
       </Container>
     );
   }

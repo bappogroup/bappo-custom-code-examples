@@ -1,6 +1,6 @@
 import React from 'react';
-import moment from 'moment';
 import { styled, ActivityIndicator, View, Text } from 'bappo-components';
+import { findOrCreateTimesheetByDate } from 'utils';
 
 class Navigator extends React.Component {
   state = {
@@ -12,59 +12,27 @@ class Navigator extends React.Component {
     const { currentUser } = $global;
 
     // TODO: Navigate Manager users
-
-    const employee = await $models.Employee.findOne({
+    const currentEmployee = await $models.Employee.findOne({
       where: {
         user_id: currentUser.id,
       },
     });
 
-    if (!employee) {
+    if (!currentEmployee) {
       return this.setState({
         errorMessage: 'You are not authorized to Timesheets',
       });
     }
 
-    // Find this week's timesheet
-    const monday = moment().day(1);
-
-    let targetWeek;
-    targetWeek = await $models.Week.findOne({
-      where: {
-        startDate: monday.format('YYYY-MM-DD'),
-      },
-    });
-
-    if (!targetWeek) {
-      // Create current week if not found
-      targetWeek = await $models.Week.create({
-        name: 'sample',
-        startDate: monday.format('YYYY-MM-DD'),
-        endDate: monday
-          .clone()
-          .add(6, 'days')
-          .format('YYYY-MM-DD'),
-      });
-    }
-
-    let targetTimesheet;
-    targetTimesheet = await $models.Timesheet.findOne({
-      where: {
-        week: monday,
-        consultant_id: currentConsultant.id,
-      },
-    });
-
-    if (!targetTimesheet) {
-      // Create timesheet if not found
-      targetTimesheet = await $models.Timesheet.create({
-        week: monday,
-        consultant_id: currentConsultant.id,
-      });
-    }
+    // Find current week's timesheet
+    // In ADM, weeks start on Sundays and end on Saturdays
+    const targetTimesheet = await findOrCreateTimesheetByDate(
+      $models,
+      currentEmployee.id,
+    );
 
     // Navigate to this timesheet
-    $navigation.navigate('TimesheetDetailsPage', {
+    return $navigation.navigate('MyTimesheetView', {
       recordId: targetTimesheet.id,
     });
   }
