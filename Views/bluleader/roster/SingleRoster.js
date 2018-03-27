@@ -1,29 +1,110 @@
 import React from 'react';
-import { FlatList, View, Text, Button, styled } from 'bappo-components';
-import dates from './dates.js';
 import moment from 'moment';
-const defaultFromDate = moment();
-const defaultToDate = moment().add(365, 'days');
+import {
+  ActivityIndicator,
+  FlatList,
+  View,
+  Text,
+  Button,
+  styled,
+} from 'bappo-components';
+import utils from 'utils';
 
-class Roster extends React.Component {
+const weekdays = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const {
+  getMonday,
+  // daysDisplayed,
+  datesToArray,
+  // datesToArrayByStart,
+  // datesEqual,
+} = utils;
+
+function truncString(str, max = 18, add = '...') {
+  add = add || '...';
+  return typeof str === 'string' && str.length > max
+    ? str.substring(0, max) + add
+    : str;
+}
+
+class SingleRoster extends React.Component {
   state = {
+    startDate: null,
+    endDate: null,
     loading: true,
-    fromDate: defaultFromDate,
-    toDate: defaultToDate,
-    dates: dates(defaultFromDate, defaultToDate),
+    consultant: null,
+    entries: {},
+    weeklyEntries: [],
   };
 
-  renderCell = info => {
-    const date = info.item.date;
+  async componentWillMount() {
+    const { consultant_id, $models } = this.props;
+    if (!consultant_id) return;
 
-    return (
-      <Cell
-        onPress={() => this.openEntryForm(entry)}
-        backgroundColor={backgroundColor}
-      >
-        <CellText>{info.item.date.format('YYYYMMDD')}</CellText>
-      </Cell>
+    const consultant = await $models.Consultant.findById(consultant_id);
+
+    await this.setState({ consultant });
+    await this.loadRosterEntries();
+  }
+
+  loadRosterEntries = async extraWeeks => {
+    const { consultant } = this.state;
+    this.setState({ loading: true });
+
+    // Fetch entries: 12 weeks from today
+    const startDate = this.state.startDate || getMonday();
+    const endDate =
+      this.state.endDate ||
+      getMonday()
+        .add(12, 'week')
+        .add('-1', 'day');
+
+    if (extraWeeks) {
+      if (extraWeeks > 0) {
+        endDate.add(extraWeeks, 'week');
+      } else {
+        startDate.add(extraWeeks, 'week');
+      }
+    }
+
+    const rosterEntries = await this.props.$models.RosterEntry.findAll({
+      where: {
+        consultant_id: consultant.id,
+        date: {
+          $between: [startDate.toDate(), endDate.toDate()],
+        },
+      },
+      include: [{ as: 'project' }, { as: 'probability' }],
+      limit: 10000,
+    });
+
+    const entries = {};
+    rosterEntries.forEach(entry => {
+      entries[entry.date] = entry;
+    });
+
+    // Initialize empty entries
+    for (let d = startDate.clone(); d.isBefore(endDate); d.add(1, 'day')) {
+      const date = d.format('YYYY-MM-DD');
+      if (!entries[date]) entries[date] = { date };
+    }
+
+    // Group entries by week
+    const entriesByDate = datesToArray(startDate, endDate).map(
+      date => entries[date.format('YYYY-MM-DD')],
     );
+    const weeklyEntries = [];
+
+    for (let i = 0; i <= entriesByDate.length; i += 7) {
+      weeklyEntries.push(entriesByDate.slice(i, i + 7));
+    }
+
+    this.setState({
+      loading: false,
+      weeklyEntries,
+      startDate,
+      endDate,
+    });
   };
 
   openEntryForm = entry => {
@@ -31,7 +112,7 @@ class Roster extends React.Component {
       objectKey: 'RosterEntry',
       fields: [
         'name',
-        'job_id',
+        'project_id',
         {
           path: 'date',
           name: 'startDate',
@@ -51,95 +132,178 @@ class Roster extends React.Component {
   };
 
   updateRosterEntry = async entry => {
-    const { RosterEntry } = this.props.$models;
-    const newEntries = dates(
-      moment(entry.startDate),
-      moment(entry.endDate),
-    ).map(d => {
-      return {
-        date: d.format('YYYY-MM-DD'),
-        consultant_id: entry.consultant_id,
-        job_id: entry.job_id,
-        probability_id: entry.probability_id,
-      };
-    });
-    await RosterEntry.destroy({
+    const { RosterEntry, ProjectAssignment } = this.props.$models;
+    const { consultant } = this.state;
+
+    const pa = await ProjectAssignment.findAll({
       where: {
         consultant_id: entry.consultant_id,
-        date: [entry.startDate, entry.endDate],
+        project_id: entry.project_id,
       },
     });
 
-    try {
-      await RosterEntry.bulkCreate(newEntries);
-    } catch (e) {
-      console.log(e);
-    }
+    let revenue = pa && pa.length > 0 ? pa[0].dayRate : 0;
+    revenue = Math.floor(revenue);
 
-    this.loadData();
-  };
-
-  loadData = async () => {
-    const { RosterEntry, Probability } = this.props.$models;
-    const entries = await RosterEntry.findAll({
-      where: { consultant_id: this.props.consultant.id },
-      include: [{ as: 'job' }, { as: 'probability' }],
-      limit: 1000000,
+    const newEntries = datesToArray(
+      moment(entry.startDate),
+      moment(entry.endDate),
+    ).map(d => ({
+      date: d.format('YYYY-MM-DD'),
+      consultant_id: consultant.id,
+      project_id: entry.project_id,
+      probability_id: entry.probability_id,
+      revenue,
+    }));
+    await RosterEntry.destroy({
+      where: {
+        consultant_id: entry.consultant_id,
+        date: {
+          $gte: entry.startDate,
+          $lte: entry.endDate,
+        },
+      },
     });
 
-    // Create Map of Probabilities, get the list and turn it into a lookup object
-    const probArray = await Probability.findAll({});
-    const probability = {};
-    let prob;
-    for (prob of probArray) {
-      probability[prob.id] = prob;
-    }
-
-    const map1 = {};
-    for (var entry of entries) {
-      map1[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
-    }
-
-    this.setState({
-      loading: false,
-      map1,
-      probability,
-    });
+    await RosterEntry.bulkCreate(newEntries);
+    await this.loadRosterEntries();
   };
 
-  componentDidMount() {
-    this.loadData();
-  }
+  handleClose = () => {
+    this.props.$popup.close();
+    this.props.onClose(this.state.consultant.id);
+  };
+
+  renderTable = () => {
+    const { startDate, endDate, entries } = this.state;
+    const dates = datesToArray(startDate, endDate).map(date => entries[date]);
+    const weeklyEntries = [];
+
+    for (let i = 0; i <= dates.length; i += 7) {
+      weeklyEntries.push(dates.slice(i, i + 7));
+    }
+
+    return weeklyEntries.map(this.renderRow);
+  };
+
+  renderRow = ({ item, index }) => {
+    if (!item.length) return null;
+
+    return (
+      <Row>
+        <HeaderCell>{item[0].date.substring(5)}</HeaderCell>
+        {item.map(this.renderCell)}
+      </Row>
+    );
+  };
+
+  renderCell = entry => {
+    let backgroundColor = '#f8f8f8';
+    if (entry && entry.probability) {
+      backgroundColor = entry.probability.backgroundColor;
+    }
+
+    let projectName = entry && entry.project && entry.project.name;
+
+    if (projectName) projectName = truncString(projectName);
+
+    return (
+      <Cell
+        onPress={() => this.openEntryForm(entry)}
+        backgroundColor={backgroundColor}
+      >
+        <CellText>{projectName}</CellText>
+      </Cell>
+    );
+  };
 
   render() {
-    if (this.state.loading) {
-      return (
-        <View>
-          <Text>Loading</Text>
-        </View>
-      );
+    const { loading, consultant, weeklyEntries } = this.state;
+    if (!consultant) {
+      if (loading) return <ActivityIndicator style={{ flex: 1 }} />;
+      return <Title>No consultant specified.</Title>;
     }
 
     return (
-      <FlatList
-        data={this.state.dates}
-        renderItem={this.renderCell}
-        initialNumToRender={10}
-      />
+      <Container>
+        <CloseButton onPress={this.handleClose}>X</CloseButton>
+        <Title>{consultant.name}'s Roster</Title>
+        <HeaderRow>{weekdays.map(d => <HeaderCell>{d}</HeaderCell>)}</HeaderRow>
+        <LoadButton onPress={() => this.loadRosterEntries(-4)}>
+          Load previous
+        </LoadButton>
+        <FlatList
+          data={weeklyEntries}
+          renderItem={this.renderRow}
+          getKey={item => item[0].date}
+        />
+        <LoadButton onPress={() => this.loadRosterEntries(12)}>
+          Load more
+        </LoadButton>
+      </Container>
     );
   }
 }
 
-export default Roster;
+export default SingleRoster;
 
-const Cell = styled(Button)`
-  border: 1px solid #eee;
-  margin: 3px;
+const Container = styled(View)`
+  flex: 1;
+  margin-right: 20px;
+`;
+
+const CloseButton = styled(Button)`
+  font-size: 18px;
+  margin: 15px;
+  color: gray;
+`;
+
+const Title = styled(Text)`
+  font-size: 20px;
+  margin-top: 20px;
+  margin-bottom: 15px;
+  margin-left: 20px;
+`;
+
+const LoadButton = styled(Button)`
+  box-shadow: 0 2px 4px #888888;
+  border-radius: 3px;
+  padding: 7px;
+  margin: 10px;
+  width: auto;
+  text-align: center;
+  align-self: center;
+`;
+
+const Row = styled(View)`
+  flex: 1;
+  flex-direction: row;
+  height: 40px;
+`;
+
+const HeaderRow = styled(View)`
+  flex-direction: row;
+  text-align: center;
+  height: 40px;
+`;
+
+const cellStyle = `
+  flex: 1;
   justify-content: center;
   align-items: center;
+`;
+
+const HeaderCell = styled(Text)`
+  ${cellStyle};
+  text-align: center;
+  align-self: center;
+`;
+
+const Cell = styled(Button)`
+  ${cellStyle} border: 1px solid #eee;
   background-color: ${props => props.backgroundColor};
 `;
 
 const CellText = styled(Text)`
-  font-size: 8pt;
+  font-size: 12px;
 `;

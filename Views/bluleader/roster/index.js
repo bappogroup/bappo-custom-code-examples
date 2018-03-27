@@ -1,7 +1,15 @@
 import React from 'react';
 import moment from 'moment';
-import { FlatList, View, Text, Button, styled } from 'bappo-components';
+import {
+  ActivityIndicator,
+  FlatList,
+  View,
+  Text,
+  Button,
+  styled,
+} from 'bappo-components';
 import utils from 'utils';
+import SingleRoster from './SingleRoster';
 
 const {
   getMonday,
@@ -109,14 +117,6 @@ class Roster extends React.Component {
       limit: 100000,
     });
 
-    // Create Map of Probabilities, get the list and turn it into a lookup object
-    // const probArray = await Probability.findAll({});
-    // const probability = {};
-    // let prob;
-    // for (prob of probArray) {
-    //   probability[prob.id] = prob;
-    // }
-
     const map1 = {};
     for (const entry of entries) {
       map1[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
@@ -127,6 +127,39 @@ class Roster extends React.Component {
       consultants,
       map1,
       // probability,
+    });
+  };
+
+  reloadConsultantData = async consultant_id => {
+    this.setState({ loading: true });
+    const { startDate } = this.state;
+
+    const entries = await this.props.$models.RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [
+            moment(startDate).toDate(),
+            moment(startDate)
+              .add(daysDisplayed, 'day')
+              .toDate(),
+          ],
+        },
+        consultant_id,
+      },
+      include: [{ as: 'project' }, { as: 'probability' }],
+      limit: 100000,
+    });
+
+    this.setState(state => {
+      const { map1 } = state;
+      for (const entry of entries) {
+        map1[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
+      }
+      return {
+        ...state,
+        map1,
+        loading: false,
+      };
     });
   };
 
@@ -187,13 +220,24 @@ class Roster extends React.Component {
       },
     });
 
-    try {
-      await RosterEntry.bulkCreate(newEntries);
-    } catch (e) {
-      console.log(e);
-    }
-
+    await RosterEntry.bulkCreate(newEntries);
     await this.loadData();
+  };
+
+  handleClickConsultant = consultant => {
+    this.props.$popup.open(
+      <SingleRoster
+        consultant_id={consultant.id}
+        {...this.props}
+        onClose={this.reloadConsultantData}
+      />,
+      {
+        style: {
+          width: Infinity,
+          height: Infinity,
+        },
+      },
+    );
   };
 
   renderCell = (consultant, date) => {
@@ -227,13 +271,7 @@ class Roster extends React.Component {
     if (index === 0) return <HeaderLabel />;
 
     return (
-      <Label
-        onPress={() =>
-          this.props.$navigation.navigate('SingleRosterPage', {
-            consultant_id: item.id,
-          })
-        }
-      >
+      <Label onPress={() => this.handleClickConsultant(item)}>
         <Text>{item.name}</Text>
       </Label>
     );
@@ -273,11 +311,7 @@ class Roster extends React.Component {
   render() {
     const { loading, costCenter, consultants } = this.state;
     if (loading) {
-      return (
-        <View>
-          <Text>Loading</Text>
-        </View>
-      );
+      return <ActivityIndicator style={{ flex: 1 }} />;
     }
 
     const consultantsWithHeader = [{ id: 'header' }].concat(consultants);
