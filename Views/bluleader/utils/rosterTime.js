@@ -1,7 +1,9 @@
 import moment from 'moment';
 
-const daysDisplayed = 28;
-const dateFormat = 'DD-MM-YYYY';
+export const getMonday = (date = moment()) => moment(date).day(1);
+
+export const daysDisplayed = 28;
+export const dateFormat = 'DD-MM-YYYY';
 
 export const datesToArray = (from, to) => {
   const list = [];

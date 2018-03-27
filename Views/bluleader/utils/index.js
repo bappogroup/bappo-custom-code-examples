@@ -1,6 +1,7 @@
 import moment from 'moment';
 import _ from 'lodash';
 import time from './time';
+import * as rosterTime from './rosterTime';
 
 /**
  * Generate a unique key for a forecast entry in a table.
@@ -345,7 +346,7 @@ const calculateForecast = async ({
   await Promise.all(promises);
 };
 
-export default Object.assign(time, {
+export default Object.assign({}, time, rosterTime, {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
   calculateForecast,
