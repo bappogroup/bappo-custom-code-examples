@@ -1,5 +1,4 @@
 import React from 'react';
-import { styled } from 'bappo-components';
 
 class Dummy extends React.Component {
   deleteAllForecastEntries = async () => {
@@ -26,14 +25,29 @@ class Dummy extends React.Component {
     }
   };
 
+  deleteAllUserPreferences = async () => {
+    const { UserPreference } = this.props.$models;
+    try {
+      await UserPreference.destroy({
+        where: {},
+      });
+      alert('done');
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   render() {
     return (
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
         <button onClick={this.deleteAllForecastEntries}>
           Delete all Foreast Entry Records
         </button>
         <button onClick={this.deleteAllRosterEntries}>
           Delete all Roster Entry Records
+        </button>
+        <button onClick={this.deleteAllUserPreferences}>
+          Delete all User Preferences
         </button>
       </div>
     );

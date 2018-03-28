@@ -4,6 +4,7 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import utils from 'utils';
+import { setUserPreferences, getUserPreferences } from 'userpreferences';
 
 const {
   calculateForecast,
@@ -12,33 +13,46 @@ const {
   generateMonthArray,
 } = utils;
 
-const newEntry = (financialYear, month, element, amount) => {
-  return {
-    newRecord: true,
-    financialYear,
-    financialMonth: month,
-    forecastElement_id: element.id,
-    forecastElement: element,
-    amount: amount || '',
-  };
-};
+const newEntry = (financialYear, month, element, amount) => ({
+  newRecord: true,
+  financialYear,
+  financialMonth: month,
+  forecastElement_id: element.id,
+  forecastElement: element,
+  amount: amount || '',
+});
 
 class ForecastMatrix extends React.Component {
   monthArray = [];
 
   state = {
     loading: true,
+    company: null,
     financialYear: null,
-    profitCentre: null,
     entries: {},
     profitCentres: [],
-    costCenters: [],
     saving: false,
   };
 
-  async componentDidMount() {
+  async componentWillMount() {
     this.monthArray = generateMonthArray();
-    await this.setFilters();
+
+    // Load user preferences
+    const prefs = await getUserPreferences(
+      this.props.$global.currentUser.id,
+      this.props.$models,
+    );
+    const { company_id, financialYear } = prefs;
+
+    if (!(company_id && financialYear)) await this.setFilters();
+    else {
+      const company = await this.props.$models.Company.findById(company_id);
+      await this.setState({
+        company,
+        financialYear,
+      });
+      await this.loadData();
+    }
   }
 
   // Bring up a popup asking which company and financial year
@@ -77,13 +91,18 @@ class ForecastMatrix extends React.Component {
         companyId: company && company.id,
         financialYear: financialYear || getFinancialYear(),
       },
-      onSubmit: async ({ companyId, financialYear }) => {
-        const company = companies.find(com => com.id === companyId);
+      onSubmit: async ({ companyId, financialYear: selectedFinancialYear }) => {
+        const selectedCompany = companies.find(com => com.id === companyId);
+
         await this.setState({
-          company,
-          financialYear,
+          company: selectedCompany,
+          financialYear: selectedFinancialYear,
         });
         await this.loadData();
+        setUserPreferences(this.props.$global.currentUser.id, $models, {
+          company_id: companyId,
+          financialYear: selectedFinancialYear,
+        });
       },
     });
   };
@@ -92,12 +111,9 @@ class ForecastMatrix extends React.Component {
     const { financialYear, company } = this.state;
     if (!(financialYear && company)) return;
 
-    const {
-      ProfitCentre,
-      ForecastEntry,
-      ForecastElement,
-      CostCenter,
-    } = this.props.$models;
+    this.setState({ loading: true });
+
+    const { ProfitCentre, ForecastEntry, ForecastElement } = this.props.$models;
     const entries = {};
 
     // Find all profit centres
@@ -130,7 +146,7 @@ class ForecastMatrix extends React.Component {
     const rev_elements = [];
     const oh_elements = [];
 
-    for (let entry of entries_array) {
+    for (const entry of entries_array) {
       const key = getForecastEntryKey(
         entry.financialYear,
         entry.financialMonth,
@@ -153,7 +169,7 @@ class ForecastMatrix extends React.Component {
       }
     }
 
-    for (let element of elements) {
+    for (const element of elements) {
       switch (element.elementType) {
         case '1':
           cos_elements.push(element);
@@ -182,20 +198,19 @@ class ForecastMatrix extends React.Component {
     }
 
     // Find all related cost centers, for later use
-    const costCenters = await CostCenter.findAll({
-      where: {
-        profitCentre_id: {
-          $in: profitCentreIds,
-        },
-      },
-    });
+    // const costCenters = await CostCenter.findAll({
+    //   where: {
+    //     profitCentre_id: {
+    //       $in: profitCentreIds,
+    //     },
+    //   },
+    // });
 
     await this.setState({
       loading: false,
       entries,
       profitCentres,
-      costCenters,
-      elements,
+      // elements,
       cos_elements,
       rev_elements,
       oh_elements,
@@ -223,18 +238,16 @@ class ForecastMatrix extends React.Component {
     return t;
   };
 
-  renderRow = element => {
-    return (
-      <Row>
-        <RowLabel>
-          <span>{element.name}</span>
-        </RowLabel>
-        {this.monthArray.map(month =>
-          this.renderCell(month.financialMonth, element),
-        )}
-      </Row>
-    );
-  };
+  renderRow = element => (
+    <Row>
+      <RowLabel>
+        <span>{element.name}</span>
+      </RowLabel>
+      {this.monthArray.map(month =>
+        this.renderCell(month.financialMonth, element),
+      )}
+    </Row>
+  );
 
   renderCell = (financialMonth, element) => {
     const key = getForecastEntryKey(

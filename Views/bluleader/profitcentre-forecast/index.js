@@ -1,6 +1,7 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import utils from 'utils';
+import { setUserPreferences, getUserPreferences } from 'userpreferences';
 
 const {
   calculateForecast,
@@ -31,9 +32,27 @@ class ForecastMatrix extends React.Component {
     saving: false,
   };
 
-  async componentDidMount() {
+  async componentWillMount() {
     this.monthArray = generateMonthArray();
-    await this.setFilters();
+
+    // Load user preferences
+    const prefs = await getUserPreferences(
+      this.props.$global.currentUser.id,
+      this.props.$models,
+    );
+    const { profitcentre_id, financialYear } = prefs;
+
+    if (!(profitcentre_id && financialYear)) await this.setFilters();
+    else {
+      const profitCentre = await this.props.$models.ProfitCentre.findById(
+        profitcentre_id,
+      );
+      await this.setState({
+        profitCentre,
+        financialYear,
+      });
+      await this.loadData();
+    }
   }
 
   // Bring up a popup asking which profit centre and time slot
@@ -79,6 +98,10 @@ class ForecastMatrix extends React.Component {
           financialYear,
         });
         await this.loadData();
+        setUserPreferences(this.props.$global.currentUser.id, $models, {
+          profitcentre_id: profitCentreId,
+          financialYear,
+        });
       },
     });
   };

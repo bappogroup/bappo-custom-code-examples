@@ -2,6 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { styled } from 'bappo-components';
 import utils from 'utils';
+import { setUserPreferences, getUserPreferences } from 'userpreferences';
 
 const {
   getForecastEntryKey,
@@ -35,6 +36,7 @@ const forecastTypeValueToLabel = value => {
 class ForecastMatrix extends React.Component {
   state = {
     loading: true,
+    project: null,
     costTypes: ['Cost'],
     revenueTypes: ['Revenue'],
     entries: {}, // ProjectForecastEntry map
@@ -43,7 +45,19 @@ class ForecastMatrix extends React.Component {
   };
 
   async componentWillMount() {
-    await this.setFilters();
+    // Load user preferences
+    const prefs = await getUserPreferences(
+      this.props.$global.currentUser.id,
+      this.props.$models,
+    );
+    const { project_id } = prefs;
+
+    if (!project_id) await this.setFilters();
+    else {
+      const project = await this.props.$models.Project.findById(project_id);
+      await this.setState({ project });
+      await this.loadData();
+    }
   }
 
   // Bring up a popup asking which profit centre and time slot
@@ -90,6 +104,9 @@ class ForecastMatrix extends React.Component {
           project: chosenProject,
         });
         await this.loadData();
+        setUserPreferences(this.props.$global.currentUser.id, $models, {
+          project_id: projectId,
+        });
       },
     });
   };
@@ -244,8 +261,8 @@ class ForecastMatrix extends React.Component {
         ];
 
       const margin =
-        +(revenueEntry && revenueEntry.amount) -
-        +(costFromRosterEntry && costFromRosterEntry.amount);
+        +((revenueEntry && revenueEntry.amount) || 0) -
+        +((costFromRosterEntry && costFromRosterEntry.amount) || 0);
 
       entiresWithMargins[key] = {
         financialYear: month.year,
@@ -266,17 +283,11 @@ class ForecastMatrix extends React.Component {
     const { project, financialYear, entries } = this.state;
 
     // Delete old entries
-    // TODO: use $in when bug is fixed
     await ProjectForecastEntry.destroy({
       where: {
-        forecastType: '1',
-        project_id: project.id,
-        financialYear: financialYear.toString(),
-      },
-    });
-    await ProjectForecastEntry.destroy({
-      where: {
-        forecastType: '2',
+        forecastType: {
+          $in: ['1', '2'],
+        },
         project_id: project.id,
         financialYear: financialYear.toString(),
       },
@@ -360,8 +371,6 @@ class ForecastMatrix extends React.Component {
       return <Loading>Loading...</Loading>;
     }
 
-    // TODO: cell width and scrollable
-    console.log(this.state.entries);
     return (
       <Container saving={saving}>
         <HeaderContainer>

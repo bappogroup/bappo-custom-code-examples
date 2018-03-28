@@ -179,10 +179,56 @@ class Roster extends React.Component {
           name: 'endDate',
           label: 'Until',
         },
+        {
+          name: 'mon',
+          type: 'Checkbox',
+          label: 'Monday',
+        },
+        {
+          name: 'tue',
+          type: 'Checkbox',
+          label: 'Tuesday',
+        },
+        {
+          name: 'wed',
+          type: 'Checkbox',
+          label: 'Wednesday',
+        },
+        {
+          name: 'thu',
+          type: 'Checkbox',
+          label: 'Thursday',
+        },
+        {
+          name: 'fri',
+          type: 'Checkbox',
+          label: 'Friday',
+        },
+        {
+          name: 'sat',
+          type: 'Checkbox',
+          label: 'Saturday',
+        },
+        {
+          name: 'sun',
+          type: 'Checkbox',
+          label: 'Sunday',
+        },
         'probability_id',
       ],
       title: `${entry.date}`,
-      initialValues: { ...entry, startDate: entry.date, endDate: entry.date },
+      initialValues: {
+        ...entry,
+        startDate: entry.date,
+        endDate: entry.date,
+        mon: true,
+        tue: true,
+        wed: true,
+        thu: true,
+        fri: true,
+        sat: false,
+        sun: false,
+      },
       onSubmit: this.updateRosterEntry,
     });
   };
@@ -200,22 +246,33 @@ class Roster extends React.Component {
     let revenue = pa && pa.length > 0 ? pa[0].dayRate : 0;
     revenue = Math.floor(revenue);
 
-    const newEntries = datesToArray(
-      moment(entry.startDate),
-      moment(entry.endDate),
-    ).map(d => ({
-      date: d.format('YYYY-MM-DD'),
-      consultant_id: entry.consultant_id,
-      project_id: entry.project_id,
-      probability_id: entry.probability_id,
-      revenue,
-    }));
+    // Generate new entries
+    const newEntries = [];
+    for (
+      let d = moment(entry.startDate).clone();
+      d.isSameOrBefore(moment(entry.endDate));
+      d.add(1, 'day')
+    ) {
+      const weekDayName = d.format('ddd').toLowerCase();
+      if (entry[weekDayName]) {
+        // Only pick chosen weekdays
+        newEntries.push({
+          date: d.format('YYYY-MM-DD'),
+          consultant_id: entry.consultant_id,
+          project_id: entry.project_id,
+          probability_id: entry.probability_id,
+          revenue,
+        });
+      }
+    }
+
+    if (newEntries.length === 0) return;
+
     await RosterEntry.destroy({
       where: {
         consultant_id: entry.consultant_id,
         date: {
-          $gte: entry.startDate,
-          $lte: entry.endDate,
+          $in: newEntries.map(e => e.date),
         },
       },
     });
