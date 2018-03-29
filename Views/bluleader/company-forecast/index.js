@@ -4,13 +4,17 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import utils from 'utils';
+import moment from 'moment';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
+import Report from './Report';
 
 const {
   calculateForecast,
   getForecastEntryKey,
   getFinancialYear,
   generateMonthArray,
+  getRosterEntryByElement,
+  financialToCalendar,
 } = utils;
 
 const newEntry = (financialYear, month, element, amount) => ({
@@ -32,6 +36,7 @@ class ForecastMatrix extends React.Component {
     entries: {},
     profitCentres: [],
     saving: false,
+    showReport: false,
   };
 
   async componentWillMount() {
@@ -114,7 +119,6 @@ class ForecastMatrix extends React.Component {
     this.setState({ loading: true });
 
     const { ProfitCentre, ForecastEntry, ForecastElement } = this.props.$models;
-    const entries = {};
 
     // Find all profit centres
     const profitCentres = await ProfitCentre.findAll({
@@ -146,6 +150,7 @@ class ForecastMatrix extends React.Component {
     const rev_elements = [];
     const oh_elements = [];
 
+    const entries = {};
     for (const entry of entries_array) {
       const key = getForecastEntryKey(
         entry.financialYear,
@@ -260,7 +265,11 @@ class ForecastMatrix extends React.Component {
 
     const amount = entry && entry.amount;
 
-    return <Cell>{amount === 0 ? '' : amount}</Cell>;
+    return (
+      <Cell onClick={() => this.calculateReportData(element, financialMonth)}>
+        {amount === 0 ? '' : amount}
+      </Cell>
+    );
   };
 
   // Calculate all rows that need to, update db, reload data and calculate total
@@ -269,15 +278,11 @@ class ForecastMatrix extends React.Component {
 
     const { profitCentres, financialYear } = this.state;
 
-    await Promise.all(
-      profitCentres.map(pc =>
-        calculateForecast({
-          $models: this.props.$models,
-          financialYear,
-          profitCentreIds: pc.id,
-        }),
-      ),
-    );
+    await calculateForecast({
+      $models: this.props.$models,
+      financialYear,
+      profitCentreIds: profitCentres.map(pc => pc.id),
+    });
 
     await this.loadData();
 
@@ -332,8 +337,62 @@ class ForecastMatrix extends React.Component {
     </RowSubTotal>
   );
 
+  calculateReportData = async (element, financialMonth) => {
+    const { profitCentres, financialYear } = this.state;
+
+    switch (element.key) {
+      case 'CWAGES': {
+        // Contractor wages
+        const wageEntries = await getRosterEntryByElement({
+          $models: this.props.$models,
+          financialTime: {
+            financialYear,
+            financialMonth,
+          },
+          projectIds: profitCentres.map(pc => pc.id),
+        });
+
+        const { calendarYear, calendarMonth } = financialToCalendar({
+          financialYear,
+          financialMonth,
+        });
+
+        const wageByConsultant = {};
+
+        wageEntries.forEach(e => {
+          if (!wageByConsultant[e.consultant.name]) {
+            wageByConsultant[e.consultant.name] = +e.consultant.dailyRate;
+          } else wageByConsultant[e.consultant.name] += +e.consultant.dailyRate;
+        });
+
+        return this.setState({
+          showReport: true,
+          reportData: {
+            name: 'Contractor Wages',
+            time: `${moment()
+              .month(calendarMonth - 1)
+              .format('MMM')} ${calendarYear}`,
+            data: wageByConsultant,
+          },
+        });
+      }
+      default:
+    }
+  };
+
   render() {
-    const { loading, saving, company, financialYear } = this.state;
+    const {
+      loading,
+      saving,
+      company,
+      financialYear,
+      showReport,
+      reportData,
+    } = this.state;
+
+    if (loading) {
+      return <Loading>Loading...</Loading>;
+    }
 
     if (!(company && financialYear)) {
       return (
@@ -342,9 +401,6 @@ class ForecastMatrix extends React.Component {
           <TextButton onClick={this.setFilters}>change</TextButton>
         </Loading>
       );
-    }
-    if (loading) {
-      return <Loading>Loading...</Loading>;
     }
 
     return (
@@ -380,6 +436,8 @@ class ForecastMatrix extends React.Component {
 
         <Space />
         {this.renderTotals('np', 'Net Profit')}
+
+        {showReport && <Report {...reportData} />}
       </Container>
     );
   }
@@ -421,6 +479,11 @@ const Cell = styled.div`
   flex-direction: row;
   flex: 1;
   justify-content: center;
+
+  &: hover {
+    cursor: pointer;
+    opacity: 0.7;
+  }
 `;
 
 const HeaderLabel = styled.div`

@@ -3,6 +3,9 @@ import _ from 'lodash';
 import time from './time';
 import * as rosterTime from './rosterTime';
 
+// Initialize forecast entries for element 'Contractor Wages'
+const billableProbabilities = ['50%', '90%', '100%'];
+
 /**
  * Generate a unique key for a forecast entry in a table.
  *
@@ -77,27 +80,12 @@ const calculateServiceRevenueAndContractorWages = async ({
   if (!(serviceRevenueElementId && contractorWagesElementId)) return;
 
   // Fetching exisiting forecast entries of the two elements, with given profit center and year
-  // TODO: fix destroy & $in bug
-  // await ForecastEntry.destroy({
-  //   where: {
-  //     financialYear: financialYear.toString(),
-  //     forecastElement_id: {
-  //       $in: [serviceRevenueElementId, contractorWagesElementId],
-  //     },
-  //     profitCentre_id,
-  //   },
-  // });
   await ForecastEntry.destroy({
     where: {
       financialYear: financialYear.toString(),
-      forecastElement_id: serviceRevenueElementId,
-      profitCentre_id,
-    },
-  });
-  await ForecastEntry.destroy({
-    where: {
-      financialYear: financialYear.toString(),
-      forecastElement_id: contractorWagesElementId,
+      forecastElement_id: {
+        $in: [serviceRevenueElementId, contractorWagesElementId],
+      },
       profitCentre_id,
     },
   });
@@ -141,22 +129,26 @@ const calculateServiceRevenueAndContractorWages = async ({
     },
     limit: 1000,
   });
+
+  if (!projects.length) return;
+
   const projectIds = projects.map(p => p.id);
 
   // Fetch roster entries for the whole financial year, of this profit centre
   // include consultants if it's a contractor
+  const startDate = moment({
+    year: financialYear,
+    month: 6,
+  });
   const rosterEntries = await RosterEntry.findAll({
     where: {
       date: {
         $between: [
-          moment({
-            year: financialYear,
-            month: 6,
-          }).toDate(),
-          moment({
-            year: financialYear + 1,
-            month: 6,
-          }).toDate(),
+          startDate.toDate(),
+          startDate
+            .clone()
+            .add(1, 'year')
+            .toDate(),
         ],
       },
       project_id: {
@@ -167,13 +159,10 @@ const calculateServiceRevenueAndContractorWages = async ({
     limit: 100000,
   });
 
-  // Initialize forecast entries for element 'Contractor Wages'
-  const billableProbabilities = ['50%', '90%', '100%'];
-
   // Calculate forecast entries
   for (const rosterEntry of rosterEntries) {
     const calendarMonth = moment(rosterEntry.date).month() + 1;
-    let calendarYear = financialYear;
+    let calendarYear = +financialYear;
     if (calendarMonth <= time.fiscalOffset) calendarYear += 1;
 
     const serviceRevenueKey = getForecastEntryKey(
@@ -346,8 +335,70 @@ const calculateForecast = async ({
   await Promise.all(promises);
 };
 
+const getRosterEntryByElement = async ({
+  $models,
+  element,
+  calendarTime,
+  financialTime,
+  projectIds,
+}) => {
+  let timeObj = calendarTime;
+  if (financialTime) {
+    timeObj = time.financialToCalendar(financialTime);
+  }
+  const { calendarYear, calendarMonth } = timeObj;
+
+  if (!(calendarYear && calendarMonth && projectIds.length)) return [];
+
+  const startDate = moment({
+    year: calendarYear,
+    month: calendarMonth - 1,
+    day: 1,
+  });
+
+  const rosterEntries = await $models.RosterEntry.findAll({
+    where: {
+      date: {
+        $between: [
+          startDate.toDate(),
+          startDate
+            .clone()
+            .add(1, 'month')
+            .toDate(),
+        ],
+      },
+      project_id: {
+        $in: projectIds,
+      },
+    },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+    limit: 100000,
+  });
+
+  // Get contractor wages entries
+  const wageEntries = [];
+  for (const rosterEntry of rosterEntries) {
+    // Find roster entries that incur 'Contractor Wages', and update forecast entries for that element
+    // Conditions are:
+    // - prob >= 50%,
+    // - project type === 2 ('T&M')
+    // - consultant type === 2 ('Contractor')
+    const probability = _.get(rosterEntry, 'probability.name');
+    if (
+      _.get(rosterEntry, 'consultant.consultantType') === '2' &&
+      _.get(rosterEntry, 'project.projectType') === '2' &&
+      billableProbabilities.includes(probability)
+    ) {
+      wageEntries.push(rosterEntry);
+    }
+  }
+
+  return wageEntries;
+};
+
 export default Object.assign({}, time, rosterTime, {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
+  getRosterEntryByElement,
   calculateForecast,
 });
