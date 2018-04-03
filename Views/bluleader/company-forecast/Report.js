@@ -13,6 +13,8 @@ class Report extends React.Component {
 
   render() {
     const { name, time, data } = this.props;
+    if (!name) return null;
+
     let total = 0;
     Object.values(data).forEach(value => {
       total += +value;

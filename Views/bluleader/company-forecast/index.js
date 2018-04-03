@@ -202,15 +202,6 @@ class ForecastMatrix extends React.Component {
       });
     }
 
-    // Find all related cost centers, for later use
-    // const costCenters = await CostCenter.findAll({
-    //   where: {
-    //     profitCentre_id: {
-    //       $in: profitCentreIds,
-    //     },
-    //   },
-    // });
-
     await this.setState({
       loading: false,
       entries,
@@ -339,17 +330,19 @@ class ForecastMatrix extends React.Component {
 
   calculateReportData = async (element, financialMonth) => {
     const { profitCentres, financialYear } = this.state;
+    const profitCentreIds = profitCentres.map(pc => pc.id);
+    const { $models } = this.props;
 
     switch (element.key) {
       case 'CWAGES': {
         // Contractor wages
         const wageEntries = await getRosterEntryByElement({
-          $models: this.props.$models,
+          $models,
           financialTime: {
             financialYear,
             financialMonth,
           },
-          projectIds: profitCentres.map(pc => pc.id),
+          profitCentreIds,
         });
 
         const { calendarYear, calendarMonth } = financialToCalendar({
@@ -376,7 +369,24 @@ class ForecastMatrix extends React.Component {
           },
         });
       }
-      default:
+      case 'SAL': {
+        // Consultant salaries
+        // Find all related cost centers, for later use
+        const costCenters = await $models.CostCenter.findAll({
+          where: {
+            profitCentre_id: {
+              $in: profitCentreIds,
+            },
+          },
+        });
+        return;
+      }
+      default: {
+        this.setState({
+          showReport: false,
+          reportData: null,
+        });
+      }
     }
   };
 
