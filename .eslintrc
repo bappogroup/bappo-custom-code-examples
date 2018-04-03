@@ -15,6 +15,7 @@
     "import/no-unresolved": ["off"],
     "import/extensions": ["off"],
     "no-plusplus": "off",
-    "no-restricted-syntax": "off"
+    "no-restricted-syntax": "off",
+    "no-did-mount-set-state": "off"
   }
 }

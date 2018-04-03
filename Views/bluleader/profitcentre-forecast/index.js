@@ -1,29 +1,23 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 import utils from 'utils';
-import moment from 'moment';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import ForecastReport from 'forecast-report';
 
 const {
   calculateForecast,
-  financialToCalendar,
   getForecastEntryKey,
   getFinancialYear,
   generateMonthArray,
-  getWageRosterEntries,
-  getConsultantSalariesByMonth,
 } = utils;
 
-const newEntry = (financialYear, financialMonth, element, amount) => {
-  return {
-    financialYear,
-    financialMonth,
-    forecastElement_id: element.id,
-    forecastElement: element,
-    amount: amount || '',
-  };
-};
+const newEntry = (financialYear, financialMonth, element, amount) => ({
+  financialYear,
+  financialMonth,
+  forecastElement_id: element.id,
+  forecastElement: element,
+  amount: amount || '',
+});
 
 class ForecastMatrix extends React.Component {
   monthArray = [];
@@ -34,6 +28,7 @@ class ForecastMatrix extends React.Component {
     profitCentre: null,
     entries: {},
     blur: false,
+    reportParams: null,
   };
 
   async componentWillMount() {
@@ -178,7 +173,6 @@ class ForecastMatrix extends React.Component {
     await this.setState({
       loading: false,
       entries,
-      elements,
       cos_elements,
       rev_elements,
       oh_elements,
@@ -357,107 +351,18 @@ class ForecastMatrix extends React.Component {
 
   calculateReportData = async (element, financialMonth) => {
     const { profitCentre, financialYear } = this.state;
-    if (!(profitCentre && financialYear)) return null;
+    if (!(profitCentre && financialYear)) return;
 
     const profitCentreIds = [profitCentre.id];
-    const { $models } = this.props;
 
-    this.setState({ blur: true });
-    switch (element.key) {
-      case 'CWAGES': {
-        // Contractor wages
-        const wageEntries = await getWageRosterEntries({
-          $models,
-          financialTime: {
-            financialYear,
-            financialMonth,
-          },
-          profitCentreIds,
-        });
-
-        const { calendarYear, calendarMonth } = financialToCalendar({
-          financialYear,
-          financialMonth,
-        });
-
-        const wageByConsultant = {};
-
-        wageEntries.forEach(e => {
-          if (!wageByConsultant[e.consultant.name]) {
-            wageByConsultant[e.consultant.name] = +e.consultant.dailyRate;
-          } else wageByConsultant[e.consultant.name] += +e.consultant.dailyRate;
-        });
-
-        const data = Object.entries(wageByConsultant).map(
-          ([consultantName, wage]) => ({
-            key: consultantName,
-            value: wage,
-          }),
-        );
-
-        return this.setState({
-          blur: false,
-          showReport: true,
-          reportData: {
-            name: 'Contractor Wages',
-            time: `${moment()
-              .month(calendarMonth - 1)
-              .format('MMM')} ${calendarYear}`,
-            data,
-          },
-        });
-      }
-      case 'SAL': {
-        // Consultant salaries
-        // Find all related cost centers, for later use
-        const costCenters = await $models.CostCenter.findAll({
-          where: {
-            profitCentre_id: {
-              $in: profitCentreIds,
-            },
-          },
-        });
-        const consultants = await $models.Consultant.findAll({
-          where: {
-            costCenter_id: {
-              $in: costCenters.map(cc => cc.id),
-            },
-          },
-        });
-        const consultantSalaries = await getConsultantSalariesByMonth({
-          consultants,
-          financialYear,
-          financialMonth,
-        });
-        const { calendarYear, calendarMonth } = financialToCalendar({
-          financialYear,
-          financialMonth,
-        });
-
-        const data = consultantSalaries.map(cs => ({
-          key: cs.consultant.name,
-          value: cs.salary,
-        }));
-        return this.setState({
-          blur: false,
-          showReport: true,
-          reportData: {
-            name: 'Consultant Salaries',
-            time: `${moment()
-              .month(calendarMonth - 1)
-              .format('MMM')} ${calendarYear}`,
-            data,
-          },
-        });
-      }
-      default: {
-        this.setState({
-          blur: false,
-          showReport: false,
-          reportData: null,
-        });
-      }
-    }
+    this.setState({
+      reportParams: {
+        elementKey: element.key,
+        financialYear,
+        financialMonth,
+        profitCentreIds,
+      },
+    });
   };
 
   renderTotal = (month, key) => (
@@ -479,8 +384,7 @@ class ForecastMatrix extends React.Component {
       blur,
       profitCentre,
       financialYear,
-      showReport,
-      reportData,
+      reportParams,
     } = this.state;
 
     if (!(profitCentre && financialYear)) {
@@ -531,7 +435,7 @@ class ForecastMatrix extends React.Component {
 
         <SaveButton onClick={this.save}> Save </SaveButton>
 
-        {showReport && <ForecastReport {...reportData} />}
+        <ForecastReport $models={this.props.$models} {...reportParams} />
       </Container>
     );
   }
