@@ -6,15 +6,16 @@ import { styled } from 'bappo-components';
 import utils from 'utils';
 import moment from 'moment';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
-import Report from './Report';
+import ForecastReport from 'forecast-report';
 
 const {
   calculateForecast,
+  financialToCalendar,
   getForecastEntryKey,
   getFinancialYear,
   generateMonthArray,
-  getRosterEntryByElement,
-  financialToCalendar,
+  getWageRosterEntries,
+  getConsultantSalariesByMonth,
 } = utils;
 
 const newEntry = (financialYear, month, element, amount) => ({
@@ -35,7 +36,7 @@ class ForecastMatrix extends React.Component {
     financialYear: null,
     entries: {},
     profitCentres: [],
-    saving: false,
+    blur: false,
     showReport: false,
   };
 
@@ -265,7 +266,7 @@ class ForecastMatrix extends React.Component {
 
   // Calculate all rows that need to, update db, reload data and calculate total
   calculateRows = async () => {
-    this.setState({ saving: true });
+    this.setState({ blur: true });
 
     const { profitCentres, financialYear } = this.state;
 
@@ -279,7 +280,7 @@ class ForecastMatrix extends React.Component {
 
     await this.setState(state => ({
       totals: this.calcTotals(state.entries),
-      saving: false,
+      blur: false,
     }));
   };
 
@@ -333,10 +334,11 @@ class ForecastMatrix extends React.Component {
     const profitCentreIds = profitCentres.map(pc => pc.id);
     const { $models } = this.props;
 
+    this.setState({ blur: true });
     switch (element.key) {
       case 'CWAGES': {
         // Contractor wages
-        const wageEntries = await getRosterEntryByElement({
+        const wageEntries = await getWageRosterEntries({
           $models,
           financialTime: {
             financialYear,
@@ -358,14 +360,22 @@ class ForecastMatrix extends React.Component {
           } else wageByConsultant[e.consultant.name] += +e.consultant.dailyRate;
         });
 
+        const data = Object.entries(wageByConsultant).map(
+          ([consultantName, wage]) => ({
+            key: consultantName,
+            value: wage,
+          }),
+        );
+
         return this.setState({
+          blur: false,
           showReport: true,
           reportData: {
             name: 'Contractor Wages',
             time: `${moment()
               .month(calendarMonth - 1)
               .format('MMM')} ${calendarYear}`,
-            data: wageByConsultant,
+            data,
           },
         });
       }
@@ -379,10 +389,42 @@ class ForecastMatrix extends React.Component {
             },
           },
         });
-        return;
+        const consultants = await $models.Consultant.findAll({
+          where: {
+            costCenter_id: {
+              $in: costCenters.map(cc => cc.id),
+            },
+          },
+        });
+        const consultantSalaries = await getConsultantSalariesByMonth({
+          consultants,
+          financialYear,
+          financialMonth,
+        });
+        const { calendarYear, calendarMonth } = financialToCalendar({
+          financialYear,
+          financialMonth,
+        });
+
+        const data = consultantSalaries.map(cs => ({
+          key: cs.consultant.name,
+          value: cs.salary,
+        }));
+        return this.setState({
+          blur: false,
+          showReport: true,
+          reportData: {
+            name: 'Consultant Salaries',
+            time: `${moment()
+              .month(calendarMonth - 1)
+              .format('MMM')} ${calendarYear}`,
+            data,
+          },
+        });
       }
       default: {
         this.setState({
+          blur: false,
           showReport: false,
           reportData: null,
         });
@@ -393,7 +435,7 @@ class ForecastMatrix extends React.Component {
   render() {
     const {
       loading,
-      saving,
+      blur,
       company,
       financialYear,
       showReport,
@@ -414,7 +456,7 @@ class ForecastMatrix extends React.Component {
     }
 
     return (
-      <Container saving={saving}>
+      <Container blur={blur}>
         <HeaderContainer>
           <Heading>
             Company: {company.name}, financial year {financialYear}
@@ -447,7 +489,7 @@ class ForecastMatrix extends React.Component {
         <Space />
         {this.renderTotals('np', 'Net Profit')}
 
-        {showReport && <Report {...reportData} />}
+        {showReport && <ForecastReport {...reportData} />}
       </Container>
     );
   }
@@ -502,9 +544,9 @@ const HeaderLabel = styled.div`
 `;
 
 const Container = styled.div`
-  ${props =>
-    props.saving ? 'filter: blur(3px); opacity: 0.5;' : ''} margin-top: 50px;
+  margin-top: 50px;
   overflow-y: scroll;
+  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
 `;
 
 const TotalCell = styled.div`

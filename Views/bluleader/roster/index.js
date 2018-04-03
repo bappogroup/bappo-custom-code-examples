@@ -234,17 +234,7 @@ class Roster extends React.Component {
   };
 
   updateRosterEntry = async entry => {
-    const { RosterEntry, ProjectAssignment } = this.props.$models;
-
-    const pa = await ProjectAssignment.findAll({
-      where: {
-        consultant_id: entry.consultant_id,
-        project_id: entry.project_id,
-      },
-    });
-
-    let revenue = pa && pa.length > 0 ? pa[0].dayRate : 0;
-    revenue = Math.floor(revenue);
+    const { RosterEntry } = this.props.$models;
 
     // Generate new entries
     const newEntries = [];
@@ -261,7 +251,6 @@ class Roster extends React.Component {
           consultant_id: entry.consultant_id,
           project_id: entry.project_id,
           probability_id: entry.probability_id,
-          revenue,
         });
       }
     }

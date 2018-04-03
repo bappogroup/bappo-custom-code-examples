@@ -1,10 +1,10 @@
 import React from 'react';
 import { styled } from 'bappo-components';
 
-class Report extends React.Component {
+class ForecastReport extends React.Component {
   state = {};
 
-  renderRow = ([key, value]) => (
+  renderRow = ({ key, value }) => (
     <Row>
       <RowLabel>{key}</RowLabel>
       <Cell>{value}</Cell>
@@ -16,8 +16,8 @@ class Report extends React.Component {
     if (!name) return null;
 
     let total = 0;
-    Object.values(data).forEach(value => {
-      total += +value;
+    data.forEach(({ value }) => {
+      if (value) total += +value;
     });
 
     return (
@@ -25,7 +25,7 @@ class Report extends React.Component {
         <Title>
           {name} Report, {time}
         </Title>
-        {Object.entries(data).map(this.renderRow)}
+        {data.map(this.renderRow)}
         <Row style={{ borderTop: '1px solid black' }}>
           <RowLabel>Total</RowLabel>
           <Cell>{total}</Cell>
@@ -35,7 +35,7 @@ class Report extends React.Component {
   }
 }
 
-export default Report;
+export default ForecastReport;
 
 const Container = styled.div`
   margin-top: 50px;

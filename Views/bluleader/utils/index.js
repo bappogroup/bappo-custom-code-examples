@@ -3,6 +3,22 @@ import _ from 'lodash';
 import time from './time';
 import * as rosterTime from './rosterTime';
 
+// Remove duplicate entries in an array
+const uniquifyArray = a => [...new Set(a)];
+
+/**
+ * Generate a unique key for a forecast entry in a table.
+ *
+ * @param {string} date - a date that moment can parse, e.g. '2018-03-03'
+ * @param {string} rowIdentifier - a string identifying a row in the table
+ * @return {string} entry key
+ */
+const getForecastEntryKeyByDate = (date, rowIdentifier) => {
+  const calendarYear = moment(date).year();
+  const calendarMonth = moment(date).month() + 1;
+  return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
+};
+
 /**
  * Generate a unique key for a forecast entry in a table.
  *
@@ -31,6 +47,12 @@ const getForecastEntryKey = (
 // Initialize forecast entries for element 'Contractor Wages'
 const billableProbabilities = ['50%', '90%', '100%'];
 
+/**
+ * Determine whether a roster entry incurs contractor wage
+ *
+ * @param {object} roster entry
+ * @return {bool}
+ */
 const rosterEntryIncursContractorWages = rosterEntry => {
   // Find roster entries that incur 'Contractor Wages', and update forecast entries for that element
   // Conditions are:
@@ -48,17 +70,120 @@ const rosterEntryIncursContractorWages = rosterEntry => {
   return false;
 };
 
-/**
- * Generate a unique key for a forecast entry in a table.
- *
- * @param {string} date - a date that moment can parse, e.g. '2018-03-03'
- * @param {string} rowIdentifier - a string identifying a row in the table
- * @return {string} entry key
- */
-const getForecastEntryKeyByDate = (date, rowIdentifier) => {
-  const calendarYear = moment(date).year();
-  const calendarMonth = moment(date).month() + 1;
-  return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
+const getWageRosterEntries = async ({
+  $models,
+  calendarTime,
+  financialTime,
+  profitCentreIds,
+}) => {
+  let timeObj = calendarTime;
+  if (financialTime) {
+    timeObj = time.financialToCalendar(financialTime);
+  }
+  const { calendarYear, calendarMonth } = timeObj;
+
+  if (!(calendarYear && calendarMonth && profitCentreIds.length)) return [];
+
+  const projects = await $models.Project.findAll({
+    where: {
+      profitCentre_id: {
+        $in: profitCentreIds,
+      },
+    },
+    limit: 1000,
+  });
+
+  const startDate = moment({
+    year: calendarYear,
+    month: calendarMonth - 1,
+    day: 1,
+  });
+
+  const rosterEntries = await $models.RosterEntry.findAll({
+    where: {
+      date: {
+        $between: [
+          startDate.toDate(),
+          startDate
+            .clone()
+            .add(1, 'month')
+            .toDate(),
+        ],
+      },
+      project_id: {
+        $in: projects.map(pj => pj.id),
+      },
+    },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+    limit: 100000,
+  });
+
+  // Get contractor wages entries
+  const wageEntries = [];
+  for (const rosterEntry of rosterEntries) {
+    // Contractor Wages
+    if (rosterEntryIncursContractorWages(rosterEntry)) {
+      wageEntries.push(rosterEntry);
+    }
+  }
+
+  return wageEntries;
+};
+
+const getConsultantSalariesByMonth = ({
+  consultants,
+  financialYear,
+  financialMonth,
+}) => {
+  const consultantSalaries = [];
+
+  for (const consultant of consultants) {
+    // Exclude contractors
+    if (consultant.consultantType !== '2') {
+      const monthlySalary = consultant.annualSalary
+        ? +consultant.annualSalary / 12
+        : 0;
+
+      // Convert financial to calendar
+      const { calendarYear, calendarMonth } = time.financialToCalendar({
+        financialYear,
+        financialMonth,
+      });
+      const prefixedMonth = `0${calendarMonth}`.slice(-2);
+      const calendarDate = `${calendarYear}-${prefixedMonth}-01`;
+
+      // Calculate partial monthly salary: how many days of this month is with in consultant's start/end date
+      // Consultant start date is required, while end date is optional
+      let validDays = 0;
+      const totalDays = moment(calendarDate).daysInMonth();
+      const monthStart = moment(calendarDate).startOf('month');
+      const monthEnd = moment(calendarDate).endOf('month');
+      const consultantStart = moment(consultant.startDate);
+      const consultantEnd = consultant.endDate && moment(consultant.endDate);
+
+      for (let m = monthStart; m.isBefore(monthEnd); m.add(1, 'days')) {
+        if (consultantEnd) {
+          if (
+            m.isSameOrAfter(consultantStart) &&
+            m.isSameOrBefore(consultantEnd)
+          ) {
+            validDays++;
+          }
+        } else if (m.isSameOrAfter(consultantStart)) {
+          validDays++;
+        }
+      }
+
+      const salary = Math.floor(monthlySalary * (validDays / totalDays));
+
+      consultantSalaries.push({
+        consultant,
+        salary,
+      });
+    }
+  }
+
+  return consultantSalaries;
 };
 
 // Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
@@ -96,7 +221,7 @@ const calculateServiceRevenueAndContractorWages = async ({
 
   if (!(serviceRevenueElementId && contractorWagesElementId)) return;
 
-  // Fetching exisiting forecast entries of the two elements, with given profit center and year
+  // Delete exisiting forecast entries of the two elements, with given profit center and year
   await ForecastEntry.destroy({
     where: {
       financialYear: financialYear.toString(),
@@ -176,6 +301,18 @@ const calculateServiceRevenueAndContractorWages = async ({
     limit: 100000,
   });
 
+  // Create lookup for project assigments
+  const consulantIds = uniquifyArray(rosterEntries.map(re => re.consultant_id));
+
+  const projectAssignments = await $models.ProjectAssignment.findAll({
+    where: { consultant_id: { $in: consulantIds } },
+  });
+
+  const paLookup = {};
+  for (const pa of projectAssignments) {
+    paLookup[`${pa.consultant_id}.${pa.project_id}`] = pa;
+  }
+
   // Calculate forecast entries
   for (const rosterEntry of rosterEntries) {
     const calendarMonth = moment(rosterEntry.date).month() + 1;
@@ -183,12 +320,16 @@ const calculateServiceRevenueAndContractorWages = async ({
     if (calendarMonth <= time.fiscalOffset) calendarYear += 1;
 
     // Service Revenue
+    const projectAssigment =
+      paLookup[`${rosterEntry.consultant_id}.${rosterEntry.project_id}`];
+    const revenue = (projectAssigment && projectAssigment.dayRate) || 0.0;
+
     const serviceRevenueKey = getForecastEntryKey(
       calendarYear,
       calendarMonth,
       serviceRevenueElementId,
     );
-    forecastEntries[serviceRevenueKey].amount += +rosterEntry.revenue;
+    forecastEntries[serviceRevenueKey].amount += +revenue;
 
     // Contractor Wages
     if (rosterEntryIncursContractorWages(rosterEntry)) {
@@ -266,50 +407,17 @@ const calculateConsultantSalaries = async ({
 
   // Calculate forecast entries by adding up monthly salaris by cost centers
   for (let i = 1; i < 13; i++) {
-    for (const consultant of consultants) {
-      // Exclude contractors
-      if (consultant.consultantType !== '2') {
-        const monthlySalary = consultant.annualSalary
-          ? +consultant.annualSalary / 12
-          : 0;
+    const consultantSalaries = getConsultantSalariesByMonth({
+      consultants,
+      financialYear,
+      financialMonth: i,
+    });
 
-        // Convert financial to calendar
-        const { calendarYear, calendarMonth } = time.financialToCalendar({
-          financialYear,
-          financialMonth: i,
-        });
-        const prefixedMonth = `0${calendarMonth}`.slice(-2);
-        const calendarDate = `${calendarYear}-${prefixedMonth}-01`;
+    const key = getForecastEntryKey(financialYear, i, elementId, true);
 
-        // Calculate partial monthly salary: how many days of this month is with in consultant's start/end date
-        // Consultant start date is required, while end date is optional
-        let validDays = 0;
-        const totalDays = moment(calendarDate).daysInMonth();
-        const monthStart = moment(calendarDate).startOf('month');
-        const monthEnd = moment(calendarDate).endOf('month');
-        const consultantStart = moment(consultant.startDate);
-        const consultantEnd = consultant.endDate && moment(consultant.endDate);
-
-        for (let m = monthStart; m.isBefore(monthEnd); m.add(1, 'days')) {
-          if (consultantEnd) {
-            if (
-              m.isSameOrAfter(consultantStart) &&
-              m.isSameOrBefore(consultantEnd)
-            ) {
-              validDays++;
-            }
-          } else if (m.isSameOrAfter(consultantStart)) {
-            validDays++;
-          }
-        }
-
-        const key = getForecastEntryKey(financialYear, i, elementId, true);
-
-        forecastEntries[key].amount += Math.floor(
-          monthlySalary * (validDays / totalDays),
-        );
-      }
-    }
+    consultantSalaries.forEach(cs => {
+      forecastEntries[key].amount += cs.salary;
+    });
   }
 
   // Create or update in db
@@ -342,70 +450,10 @@ const calculateForecast = async ({
   await Promise.all(promises);
 };
 
-const getRosterEntryByElement = async ({
-  $models,
-  element,
-  calendarTime,
-  financialTime,
-  profitCentreIds,
-}) => {
-  let timeObj = calendarTime;
-  if (financialTime) {
-    timeObj = time.financialToCalendar(financialTime);
-  }
-  const { calendarYear, calendarMonth } = timeObj;
-
-  if (!(calendarYear && calendarMonth && profitCentreIds.length)) return [];
-
-  const projects = await $models.Project.findAll({
-    where: {
-      profitCentre_id: {
-        $in: profitCentreIds,
-      },
-    },
-    limit: 1000,
-  });
-
-  const startDate = moment({
-    year: calendarYear,
-    month: calendarMonth - 1,
-    day: 1,
-  });
-
-  const rosterEntries = await $models.RosterEntry.findAll({
-    where: {
-      date: {
-        $between: [
-          startDate.toDate(),
-          startDate
-            .clone()
-            .add(1, 'month')
-            .toDate(),
-        ],
-      },
-      project_id: {
-        $in: projects.map(pj => pj.id),
-      },
-    },
-    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
-    limit: 100000,
-  });
-
-  // Get contractor wages entries
-  const wageEntries = [];
-  for (const rosterEntry of rosterEntries) {
-    // Contractor Wages
-    if (rosterEntryIncursContractorWages(rosterEntry)) {
-      wageEntries.push(rosterEntry);
-    }
-  }
-
-  return wageEntries;
-};
-
 export default Object.assign({}, time, rosterTime, {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
-  getRosterEntryByElement,
+  getWageRosterEntries,
+  getConsultantSalariesByMonth,
   calculateForecast,
 });
