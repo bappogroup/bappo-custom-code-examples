@@ -256,7 +256,7 @@ class ForecastMatrix extends React.Component {
     return (
       <Cell
         onClick={() => {
-          if (amount) this.calculateReportData(element, financialMonth);
+          if (amount) this.calculateReportData(financialMonth, element.key);
         }}
       >
         {amount}
@@ -266,7 +266,7 @@ class ForecastMatrix extends React.Component {
 
   // Calculate all rows that need to, update db, reload data and calculate total
   calculateRows = async () => {
-    this.setState({ blur: true });
+    this.setState({ blur: true, reportParams: {} });
 
     const { profitCentres, financialYear } = this.state;
 
@@ -329,28 +329,34 @@ class ForecastMatrix extends React.Component {
     </RowSubTotal>
   );
 
-  calculateReportData = (element, financialMonth) => {
+  calculateReportData = (financialMonth, elementKey) => {
     const { profitCentres, financialYear } = this.state;
-    const profitCentreIds = profitCentres.map(pc => pc.id);
+    if (!profitCentres.length) return;
 
     this.setState({
       reportParams: {
-        elementKey: element.key,
+        elementKey,
         financialYear,
         financialMonth,
-        profitCentreIds,
       },
     });
   };
 
   render() {
-    const { loading, blur, company, financialYear, reportParams } = this.state;
+    const {
+      loading,
+      blur,
+      company,
+      financialYear,
+      reportParams,
+      profitCentres,
+    } = this.state;
 
     if (loading) {
       return <Loading>Loading...</Loading>;
     }
 
-    if (!(company && financialYear)) {
+    if (!(company && financialYear && profitCentres)) {
       return (
         <Loading>
           Please specify a company and financial year to continue.
@@ -358,6 +364,8 @@ class ForecastMatrix extends React.Component {
         </Loading>
       );
     }
+
+    const profitCentreIds = profitCentres.map(pc => pc.id);
 
     return (
       <Container blur={blur}>
@@ -370,11 +378,13 @@ class ForecastMatrix extends React.Component {
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {this.monthArray.map(({ label }) => (
-            <Cell>
+          {this.monthArray.map(({ label, financialMonth }) => (
+            <ClickableCell
+              onClick={() => this.calculateReportData(financialMonth)}
+            >
               {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
-            </Cell>
+            </ClickableCell>
           ))}
         </HeaderRow>
         {this.state.rev_elements.map(this.renderRow)}
@@ -393,7 +403,11 @@ class ForecastMatrix extends React.Component {
         <Space />
         {this.renderTotals('np', 'Net Profit')}
 
-        <ForecastReport $models={this.props.$models} {...reportParams} />
+        <ForecastReport
+          {...reportParams}
+          $models={this.props.$models}
+          profitCentreIds={profitCentreIds}
+        />
       </Container>
     );
   }
@@ -436,6 +450,13 @@ const Cell = styled.div`
   flex: 1;
   justify-content: center;
 
+  &: hover {
+    cursor: pointer;
+    opacity: 0.7;
+  }
+`;
+
+const ClickableCell = styled(Cell)`
   &: hover {
     cursor: pointer;
     opacity: 0.7;

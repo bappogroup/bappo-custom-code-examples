@@ -224,7 +224,7 @@ class ForecastMatrix extends React.Component {
 
   // Calculate all rows that need to, update db, reload data and calculate total
   calculateRows = async () => {
-    this.setState({ blur: true });
+    this.setState({ blur: true, reportParams: {} });
 
     const { profitCentre, financialYear } = this.state;
 
@@ -331,7 +331,7 @@ class ForecastMatrix extends React.Component {
       return (
         <ClickableCell
           onClick={() => {
-            if (value) this.calculateReportData(element, financialMonth);
+            if (value) this.calculateReportData(financialMonth, element.key);
           }}
         >
           {value}
@@ -349,18 +349,15 @@ class ForecastMatrix extends React.Component {
     );
   };
 
-  calculateReportData = async (element, financialMonth) => {
+  calculateReportData = async (financialMonth, elementKey) => {
     const { profitCentre, financialYear } = this.state;
     if (!(profitCentre && financialYear)) return;
 
-    const profitCentreIds = [profitCentre.id];
-
     this.setState({
       reportParams: {
-        elementKey: element.key,
+        elementKey,
         financialYear,
         financialMonth,
-        profitCentreIds,
       },
     });
   };
@@ -410,11 +407,13 @@ class ForecastMatrix extends React.Component {
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
-          {this.monthArray.map(({ label }) => (
-            <Cell>
+          {this.monthArray.map(({ label, financialMonth }) => (
+            <ClickableCell
+              onClick={() => this.calculateReportData(financialMonth)}
+            >
               {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
-            </Cell>
+            </ClickableCell>
           ))}
         </HeaderRow>
         {this.state.rev_elements.map(this.renderRow)}
@@ -435,7 +434,11 @@ class ForecastMatrix extends React.Component {
 
         <SaveButton onClick={this.save}> Save </SaveButton>
 
-        <ForecastReport $models={this.props.$models} {...reportParams} />
+        <ForecastReport
+          {...reportParams}
+          $models={this.props.$models}
+          profitCentreIds={[profitCentre.id]}
+        />
       </Container>
     );
   }

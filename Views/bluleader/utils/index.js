@@ -70,18 +70,17 @@ const rosterEntryIncursContractorWages = rosterEntry => {
   return false;
 };
 
+/**
+ * Get roster entries that incurs contractor wages of a given month
+ *
+ * @return {array} roster entry array
+ */
 const getWageRosterEntries = async ({
   $models,
-  calendarTime,
-  financialTime,
+  calendarYear,
+  calendarMonth,
   profitCentreIds,
 }) => {
-  let timeObj = calendarTime;
-  if (financialTime) {
-    timeObj = time.financialToCalendar(financialTime);
-  }
-  const { calendarYear, calendarMonth } = timeObj;
-
   if (!(calendarYear && calendarMonth && profitCentreIds.length)) return [];
 
   const projects = await $models.Project.findAll({
@@ -93,6 +92,7 @@ const getWageRosterEntries = async ({
     limit: 1000,
   });
 
+  // Fetch roster entries of given month
   const startDate = moment({
     year: calendarYear,
     month: calendarMonth - 1,
@@ -130,6 +130,94 @@ const getWageRosterEntries = async ({
   return wageEntries;
 };
 
+/**
+ * Calculate service revenues of a given month
+ *
+ * @return {object} consultantName-revenue pairs
+ */
+const getServiceRevenueRosterEntries = async ({
+  $models,
+  calendarYear,
+  calendarMonth,
+  consultantIds,
+  profitCentreIds,
+}) => {
+  if (
+    !(
+      calendarYear &&
+      calendarMonth &&
+      profitCentreIds.length &&
+      consultantIds.length
+    )
+  ) {
+    return [];
+  }
+
+  // Fetch roster entries of given month
+  const projects = await $models.Project.findAll({
+    where: {
+      profitCentre_id: {
+        $in: profitCentreIds,
+      },
+    },
+    limit: 1000,
+  });
+
+  const startDate = moment({
+    year: calendarYear,
+    month: calendarMonth - 1,
+    day: 1,
+  });
+
+  const rosterEntries = await $models.RosterEntry.findAll({
+    where: {
+      date: {
+        $between: [
+          startDate.toDate(),
+          startDate
+            .clone()
+            .add(1, 'month')
+            .toDate(),
+        ],
+      },
+      project_id: {
+        $in: projects.map(pj => pj.id),
+      },
+    },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+    limit: 100000,
+  });
+
+  // Create lookup for project assigments
+  const projectAssignments = await $models.ProjectAssignment.findAll({
+    where: { consultant_id: { $in: consultantIds } },
+  });
+
+  const paLookup = {};
+  for (const pa of projectAssignments) {
+    paLookup[`${pa.consultant_id}.${pa.project_id}`] = pa;
+  }
+
+  const consultantServiceRevenues = {};
+  for (const rosterEntry of rosterEntries) {
+    const projectAssigment =
+      paLookup[`${rosterEntry.consultant_id}.${rosterEntry.project_id}`];
+    const revenue = +(projectAssigment && projectAssigment.dayRate) || 0;
+
+    if (!consultantServiceRevenues[rosterEntry.consultant.name]) {
+      consultantServiceRevenues[rosterEntry.consultant.name] = 0;
+    }
+    consultantServiceRevenues[rosterEntry.consultant.name] += revenue;
+  }
+
+  return consultantServiceRevenues;
+};
+
+/**
+ * Calculate consultant salaries of a given month
+ *
+ * @return {array} array of object containing consultant and salary
+ */
 const getConsultantSalariesByMonth = ({
   consultants,
   financialYear,
@@ -302,10 +390,12 @@ const calculateServiceRevenueAndContractorWages = async ({
   });
 
   // Create lookup for project assigments
-  const consulantIds = uniquifyArray(rosterEntries.map(re => re.consultant_id));
+  const consultantIds = uniquifyArray(
+    rosterEntries.map(re => re.consultant_id),
+  );
 
   const projectAssignments = await $models.ProjectAssignment.findAll({
-    where: { consultant_id: { $in: consulantIds } },
+    where: { consultant_id: { $in: consultantIds } },
   });
 
   const paLookup = {};
@@ -322,7 +412,7 @@ const calculateServiceRevenueAndContractorWages = async ({
     // Service Revenue
     const projectAssigment =
       paLookup[`${rosterEntry.consultant_id}.${rosterEntry.project_id}`];
-    const revenue = (projectAssigment && projectAssigment.dayRate) || 0.0;
+    const revenue = (projectAssigment && projectAssigment.dayRate) || 0;
 
     const serviceRevenueKey = getForecastEntryKey(
       calendarYear,
@@ -454,6 +544,7 @@ export default Object.assign({}, time, rosterTime, {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
   getWageRosterEntries,
+  getServiceRevenueRosterEntries,
   getConsultantSalariesByMonth,
   calculateForecast,
 });
