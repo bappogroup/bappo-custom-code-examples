@@ -38,13 +38,17 @@ const generateMonthArray = (offset = fiscalOffset) => {
  * Get financial year
  *
  * @param {string || moment} date
- * @return {number} year
+ * @return {object} contains financialYear and financialMonth
  */
-const getFinancialYear = (date = moment()) => {
+const getFinancialTimeFromDate = (date = moment()) => {
+  let financialYear = moment(date).year();
   const quarter = moment(date).quarter();
+  if (quarter === 1 || quarter === 2) financialYear -= 1;
 
-  if (quarter === 1 || quarter === 2) return moment().year() - 1;
-  return moment().year();
+  const calendarMonth = moment(date).month() - 1;
+  const financialMonth = monthCalendarToFinancial(calendarMonth);
+
+  return { financialYear, financialMonth };
 };
 
 /**
@@ -71,15 +75,10 @@ const financialToCalendar = (
   };
 };
 
-// const calendarToFinancial = (
-//   { calendarYear, calendarMonth },
-//   offset = fiscalOffset,
-// ) => {};
-
 export default {
   fiscalOffset,
   financialToCalendar,
-  getFinancialYear,
+  getFinancialTimeFromDate,
   generateMonthArray,
   monthFinancialToCalendar,
   monthCalendarToFinancial,

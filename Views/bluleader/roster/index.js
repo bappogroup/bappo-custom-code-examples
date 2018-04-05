@@ -163,12 +163,35 @@ class Roster extends React.Component {
     });
   };
 
-  openEntryForm = entry => {
+  openEntryForm = async (entry, consultant) => {
+    const projectAssignments = await this.props.$models.ProjectAssignment.findAll(
+      {
+        where: {
+          consultant_id: consultant.id,
+        },
+        include: [{ as: 'project' }],
+        limit: 1000,
+      },
+    );
+
+    const projectOptions = projectAssignments.map(pa => ({
+      id: pa.project_id,
+      label: pa.project.name,
+    }));
+
     this.props.$popup.form({
       objectKey: 'RosterEntry',
       fields: [
         'name',
-        'project_id',
+        {
+          name: 'project_id',
+          label: 'Project',
+          type: 'FixedList',
+          properties: {
+            options: projectOptions,
+          },
+          validate: [value => (value ? undefined : 'Required')],
+        },
         {
           path: 'date',
           name: 'startDate',
@@ -304,7 +327,7 @@ class Roster extends React.Component {
 
     return (
       <Cell
-        onPress={() => this.openEntryForm(entry)}
+        onPress={() => this.openEntryForm(entry, consultant)}
         backgroundColor={backgroundColor}
       >
         <CellText>{projectName}</CellText>

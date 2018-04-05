@@ -7,7 +7,7 @@ import { setUserPreferences, getUserPreferences } from 'userpreferences';
 const {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
-  getFinancialYear,
+  getFinancialTimeFromDate,
   monthCalendarToFinancial,
 } = utils;
 
@@ -122,7 +122,7 @@ class ForecastMatrix extends React.Component {
     // Get months for this project
     const startDate = moment(project.startDate);
     const endDate = moment(project.endDate);
-    const financialYear = getFinancialYear(startDate);
+    const financialYear = getFinancialTimeFromDate(startDate).financialYear;
 
     while (
       endDate > startDate ||

@@ -17,6 +17,7 @@
     "no-plusplus": "off",
     "no-restricted-syntax": "off",
     "no-did-mount-set-state": "off",
-    "no-did-update-set-state": "off"
+    "no-did-update-set-state": "off",
+    "no-loop-func":"off"
   }
 }

@@ -7,7 +7,7 @@ import ForecastReport from 'forecast-report';
 const {
   calculateForecast,
   getForecastEntryKey,
-  getFinancialYear,
+  getFinancialTimeFromDate,
   generateMonthArray,
 } = utils;
 
@@ -88,7 +88,8 @@ class ForecastMatrix extends React.Component {
       ],
       initialValues: {
         profitCentreId: profitCentre && profitCentre.id,
-        financialYear: financialYear || getFinancialYear(),
+        financialYear:
+          financialYear || getFinancialTimeFromDate().financialYear,
       },
       onSubmit: async ({ profitCentreId, financialYear }) => {
         const profitCentre = profitCentres.find(pc => pc.id === profitCentreId);
@@ -300,6 +301,8 @@ class ForecastMatrix extends React.Component {
       case 'SAL':
       case 'TMREV':
       case 'CWAGES':
+      case 'INTCH':
+      case 'INTREV':
         displayOnly = true;
         break;
       default:

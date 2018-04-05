@@ -35,6 +35,7 @@ class SingleRoster extends React.Component {
     consultant: null,
     entries: {},
     weeklyEntries: [],
+    projectOptions: [],
   };
 
   async componentWillMount() {
@@ -42,8 +43,20 @@ class SingleRoster extends React.Component {
     if (!consultant_id) return;
 
     const consultant = await $models.Consultant.findById(consultant_id);
+    const projectAssignments = await $models.ProjectAssignment.findAll({
+      where: {
+        consultant_id,
+      },
+      include: [{ as: 'project' }],
+      limit: 1000,
+    });
 
-    await this.setState({ consultant });
+    const projectOptions = projectAssignments.map(pa => ({
+      id: pa.project_id,
+      label: pa.project.name,
+    }));
+
+    await this.setState({ consultant, projectOptions });
     await this.loadRosterEntries();
   }
 
@@ -112,7 +125,15 @@ class SingleRoster extends React.Component {
       objectKey: 'RosterEntry',
       fields: [
         'name',
-        'project_id',
+        {
+          name: 'project_id',
+          label: 'Project',
+          type: 'FixedList',
+          properties: {
+            options: this.state.projectOptions,
+          },
+          validate: [value => (value ? undefined : 'Required')],
+        },
         {
           path: 'date',
           name: 'startDate',
