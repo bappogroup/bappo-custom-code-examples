@@ -5,7 +5,8 @@ import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import ForecastReport from 'forecast-report';
 
 const {
-  calculateForecast,
+  calculateForecastForProfitCentre,
+  calculateBaseData,
   getForecastEntryKey,
   getFinancialTimeFromDate,
   generateMonthArray,
@@ -29,23 +30,19 @@ class ForecastMatrix extends React.Component {
     entries: {},
     blur: false,
     reportParams: null,
+    calculationBaseData: null,
   };
 
   async componentWillMount() {
     this.monthArray = generateMonthArray();
 
     // Load user preferences
-    const prefs = await getUserPreferences(
-      this.props.$global.currentUser.id,
-      this.props.$models,
-    );
+    const prefs = await getUserPreferences(this.props.$global.currentUser.id, this.props.$models);
     const { profitcentre_id, financialYear } = prefs;
 
     if (!(profitcentre_id && financialYear)) await this.setFilters();
     else {
-      const profitCentre = await this.props.$models.ProfitCentre.findById(
-        profitcentre_id,
-      );
+      const profitCentre = await this.props.$models.ProfitCentre.findById(profitcentre_id);
       await this.setState({
         profitCentre,
         financialYear,
@@ -88,12 +85,13 @@ class ForecastMatrix extends React.Component {
       ],
       initialValues: {
         profitCentreId: profitCentre && profitCentre.id,
-        financialYear:
-          financialYear || getFinancialTimeFromDate().financialYear,
+        financialYear: financialYear || getFinancialTimeFromDate().financialYear,
       },
       onSubmit: async ({ profitCentreId, financialYear }) => {
         const profitCentre = profitCentres.find(pc => pc.id === profitCentreId);
         await this.setState({
+          calculationBaseData: null,
+          reportParams: null,
           profitCentre,
           financialYear,
         });
@@ -114,11 +112,7 @@ class ForecastMatrix extends React.Component {
 
     // Find all related entries
     const entriesArray = await ForecastEntry.findAll({
-      include: [
-        { as: 'profitCentre' },
-        { as: 'costCentre' },
-        { as: 'forecastElement' },
-      ],
+      include: [{ as: 'profitCentre' }, { as: 'costCentre' }, { as: 'forecastElement' }],
       limit: 100000,
       where: {
         active: true,
@@ -159,15 +153,8 @@ class ForecastMatrix extends React.Component {
 
       // Create new entries for empty cells
       this.monthArray.forEach(month => {
-        const key = getForecastEntryKey(
-          financialYear,
-          month.financialMonth,
-          element.id,
-          true,
-        );
-        entries[key] =
-          entries[key] ||
-          newEntry(financialYear, month.financialMonth, element);
+        const key = getForecastEntryKey(financialYear, month.financialMonth, element.id, true);
+        entries[key] = entries[key] || newEntry(financialYear, month.financialMonth, element);
       });
     }
 
@@ -223,21 +210,28 @@ class ForecastMatrix extends React.Component {
     this.setState({ blur: false });
   };
 
-  // Calculate all rows that need to, update db, reload data and calculate total
-  calculateRows = async () => {
-    this.setState({ blur: true, reportParams: {} });
-
+  // Calculate all rows that need to. Then update db, reload data and calculate total
+  calculate = async () => {
+    this.setState({ blur: true, reportParams: null });
     const { profitCentre, financialYear } = this.state;
 
-    await calculateForecast({
+    // Get general data in preparation for calculations
+    const calculationBaseData = await calculateBaseData({
+      $models: this.props.$models,
+      profitCentreIds: [profitCentre.id],
+    });
+
+    await calculateForecastForProfitCentre({
+      ...calculationBaseData,
       $models: this.props.$models,
       financialYear,
-      profitCentreIds: [profitCentre.id],
+      profitCentre_id: profitCentre.id,
     });
 
     await this.loadData();
 
     await this.setState(state => ({
+      calculationBaseData,
       totals: this.calcTotals(state.entries),
       blur: false,
     }));
@@ -285,11 +279,11 @@ class ForecastMatrix extends React.Component {
     };
 
     this.monthArray.forEach(({ financialMonth }) => {
-      t.cos[financialMonth] = 0.0;
-      t.rev[financialMonth] = 0.0;
-      t.oh[financialMonth] = 0.0;
-      t.gp[financialMonth] = 0.0;
-      t.np[financialMonth] = 0.0;
+      t.cos[financialMonth] = 0;
+      t.rev[financialMonth] = 0;
+      t.oh[financialMonth] = 0;
+      t.gp[financialMonth] = 0;
+      t.np[financialMonth] = 0;
     });
 
     return t;
@@ -313,20 +307,13 @@ class ForecastMatrix extends React.Component {
         <RowLabel>
           <span>{element.name}</span>
         </RowLabel>
-        {this.monthArray.map(month =>
-          this.renderCell(month.financialMonth, element, displayOnly),
-        )}
+        {this.monthArray.map(month => this.renderCell(month.financialMonth, element, displayOnly))}
       </Row>
     );
   };
 
   renderCell = (financialMonth, element, displayOnly = false) => {
-    const key = getForecastEntryKey(
-      this.state.financialYear,
-      financialMonth,
-      element.id,
-      true,
-    );
+    const key = getForecastEntryKey(this.state.financialYear, financialMonth, element.id, true);
     const entry = this.state.entries[key];
     const value = entry && entry.amount;
 
@@ -344,19 +331,26 @@ class ForecastMatrix extends React.Component {
 
     return (
       <Cell>
-        <Input
-          value={value}
-          onChange={event => this.handleCellChange(entry, event.target.value)}
-        />
+        <Input value={value} onChange={event => this.handleCellChange(entry, event.target.value)} />
       </Cell>
     );
   };
 
   calculateReportData = async (financialMonth, elementKey) => {
     const { profitCentre, financialYear } = this.state;
+    let { calculationBaseData } = this.state;
     if (!(profitCentre && financialYear)) return;
 
+    // Calculate base data if needed
+    if (!calculationBaseData) {
+      calculationBaseData = await calculateBaseData({
+        $models: this.props.$models,
+        profitCentreIds: [profitCentre.id],
+      });
+    }
+
     this.setState({
+      calculationBaseData,
       reportParams: {
         elementKey,
         financialYear,
@@ -365,16 +359,12 @@ class ForecastMatrix extends React.Component {
     });
   };
 
-  renderTotal = (month, key) => (
-    <TotalCell>{this.state.totals[key][month]}</TotalCell>
-  );
+  renderTotal = (month, key) => <TotalCell>{this.state.totals[key][month]}</TotalCell>;
 
   renderTotals = (key, label) => (
     <RowSubTotal>
       <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
-      {this.monthArray.map(month =>
-        this.renderTotal(month.financialMonth, key),
-      )}
+      {this.monthArray.map(month => this.renderTotal(month.financialMonth, key))}
     </RowSubTotal>
   );
 
@@ -385,6 +375,7 @@ class ForecastMatrix extends React.Component {
       profitCentre,
       financialYear,
       reportParams,
+      calculationBaseData,
     } = this.state;
 
     if (!(profitCentre && financialYear)) {
@@ -406,14 +397,12 @@ class ForecastMatrix extends React.Component {
             Profit centre: {profitCentre.name}, financial year {financialYear}
           </Heading>
           <TextButton onClick={this.setFilters}>change</TextButton>
-          <TextButton onClick={this.calculateRows}>calculate</TextButton>
+          <TextButton onClick={this.calculate}>calculate</TextButton>
         </HeaderContainer>
         <HeaderRow>
           <RowLabel />
           {this.monthArray.map(({ label, financialMonth }) => (
-            <ClickableCell
-              onClick={() => this.calculateReportData(financialMonth)}
-            >
+            <ClickableCell onClick={() => this.calculateReportData(financialMonth)}>
               {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
             </ClickableCell>
@@ -435,12 +424,13 @@ class ForecastMatrix extends React.Component {
         <Space />
         {this.renderTotals('np', 'Net Profit')}
 
-        <SaveButton onClick={this.save}> Save </SaveButton>
+        <SaveButton onClick={this.save}>Save</SaveButton>
 
         <ForecastReport
-          {...reportParams}
           $models={this.props.$models}
           profitCentreIds={[profitCentre.id]}
+          {...reportParams}
+          {...calculationBaseData}
         />
       </Container>
     );

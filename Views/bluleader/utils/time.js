@@ -45,7 +45,7 @@ const getFinancialTimeFromDate = (date = moment()) => {
   const quarter = moment(date).quarter();
   if (quarter === 1 || quarter === 2) financialYear -= 1;
 
-  const calendarMonth = moment(date).month() - 1;
+  const calendarMonth = moment(date).month() + 1;
   const financialMonth = monthCalendarToFinancial(calendarMonth);
 
   return { financialYear, financialMonth };
@@ -60,10 +60,7 @@ const getFinancialTimeFromDate = (date = moment()) => {
  * @param {number} offset - how many months between calendar and financial month
  * @return {object} calendar object
  */
-const financialToCalendar = (
-  { financialYear, financialMonth },
-  offset = fiscalOffset,
-) => {
+const financialToCalendar = ({ financialYear, financialMonth }, offset = fiscalOffset) => {
   const calendarMonth = monthFinancialToCalendar(+financialMonth);
 
   let calendarYear = +financialYear;

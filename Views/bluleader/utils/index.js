@@ -67,17 +67,8 @@ const rosterEntryIncursContractorWages = rosterEntry => {
  *
  * @return {array} roster entry array
  */
-const getWageRosterEntries = async ({ $models, calendarYear, calendarMonth, profitCentreIds }) => {
-  if (!(calendarYear && calendarMonth && profitCentreIds.length)) return [];
-
-  const projects = await $models.Project.findAll({
-    where: {
-      profitCentre_id: {
-        $in: profitCentreIds,
-      },
-    },
-    limit: 1000,
-  });
+const getWageRosterEntries = async ({ $models, calendarYear, calendarMonth, projects }) => {
+  if (!(calendarYear && calendarMonth)) return [];
 
   // Fetch roster entries of given month
   const startDate = moment({
@@ -126,23 +117,12 @@ const getServiceRevenueRosterEntries = async ({
   $models,
   calendarYear,
   calendarMonth,
-  consultantIds,
-  profitCentreIds,
+  projects,
+  projectAssignmentLookup,
 }) => {
-  if (!(calendarYear && calendarMonth && profitCentreIds.length && consultantIds.length)) {
-    return [];
-  }
+  if (!(calendarYear && calendarMonth)) return [];
 
   // Fetch roster entries of given month
-  const projects = await $models.Project.findAll({
-    where: {
-      profitCentre_id: {
-        $in: profitCentreIds,
-      },
-    },
-    limit: 1000,
-  });
-
   const startDate = moment({
     year: calendarYear,
     month: calendarMonth - 1,
@@ -167,27 +147,6 @@ const getServiceRevenueRosterEntries = async ({
     include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
     limit: 100000,
   });
-
-  // Create lookup for project assignments
-  // TODO: remove
-  const pa1 = await $models.ProjectAssignment.findAll({
-    where: {
-      consultant_id: { $in: consultantIds },
-    },
-    limit: 1000,
-  });
-
-  const pa2 = await $models.ProjectAssignment.findAll({
-    where: {
-      project_id: { $in: projects.map(p => p.id) },
-    },
-    limit: 1000,
-  });
-
-  const projectAssignmentLookup = {};
-  for (const pa of [...pa1, ...pa2]) {
-    projectAssignmentLookup[`${pa.consultant_id}.${pa.project_id}`] = pa;
-  }
 
   const consultantServiceRevenues = {};
   for (const rosterEntry of rosterEntries) {
@@ -246,10 +205,12 @@ const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMon
 
       const salary = Math.floor(monthlySalary * (validDays / totalDays));
 
-      consultantSalaries.push({
-        consultant,
-        salary,
-      });
+      if (salary > 0) {
+        consultantSalaries.push({
+          consultant,
+          salary,
+        });
+      }
     }
   }
 
@@ -265,6 +226,7 @@ const calculateServiceRevenueAndContractorWages = async ({
   profitCentre_id,
   projectAssignmentLookup,
   projects,
+  consultants,
 }) => {
   const { RosterEntry, ForecastEntry } = $models;
   const forecastEntries = {};
@@ -273,7 +235,10 @@ const calculateServiceRevenueAndContractorWages = async ({
   const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
   if (!(projects.length && serviceRevenueElementId && contractorWagesElementId)) return;
 
-  const projectIds = projects.map(p => p.id);
+  const consultantsInPc = consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id);
+  const projectsInPc = projects.filter(p => p.profitCentre_id === profitCentre_id);
+  const consultantIds = consultantsInPc.map(c => c.id);
+  const projectIds = projectsInPc.map(p => p.id);
 
   // Fetch roster entries for the whole financial year, of this profit centre
   // include consultants if it's a contractor
@@ -281,27 +246,40 @@ const calculateServiceRevenueAndContractorWages = async ({
     year: financialYear,
     month: 6,
   });
-  const rosterEntries = await RosterEntry.findAll({
-    where: {
-      date: {
-        $between: [
-          startDate.toDate(),
-          startDate
-            .clone()
-            .add(1, 'year')
-            .toDate(),
-        ],
+  const endDate = startDate.clone().add(1, 'year');
+  let rosterEntriesByProjects = [];
+  if (projectIds.length > 0) {
+    rosterEntriesByProjects = await RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.toDate(), endDate.toDate()],
+        },
+        project_id: {
+          $in: projectIds,
+        },
       },
-      project_id: {
-        $in: projectIds,
+      include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+      limit: 100000,
+    });
+  }
+  let rosterEntriesByConsultants = [];
+  if (consultantIds.lengt > 0) {
+    rosterEntriesByConsultants = await RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.toDate(), endDate.toDate()],
+        },
+        consultant_id: {
+          $in: consultantIds,
+        },
       },
-    },
-    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
-    limit: 100000,
-  });
+      include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+      limit: 100000,
+    });
+  }
 
   // Calculate forecast entries
-  for (const rosterEntry of rosterEntries) {
+  for (const rosterEntry of rosterEntriesByProjects) {
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
     const { calendarMonth, calendarYear } = time.financialToCalendar({
       financialYear,
@@ -329,6 +307,14 @@ const calculateServiceRevenueAndContractorWages = async ({
       };
     }
     forecastEntries[serviceRevenueKey].amount += +dayRate;
+  }
+
+  for (const rosterEntry of rosterEntriesByConsultants) {
+    const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
+    const { calendarMonth, calendarYear } = time.financialToCalendar({
+      financialYear,
+      financialMonth,
+    });
 
     // Contractor Wages
     if (rosterEntryIncursContractorWages(rosterEntry)) {
@@ -377,7 +363,7 @@ const calculateConsultantSalaries = async ({
   // Calculate forecast entries by adding up monthly salaris by cost centers
   for (let i = 1; i < 13; i++) {
     const consultantSalaries = getConsultantSalariesByMonth({
-      consultants,
+      consultants: consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id),
       financialYear,
       financialMonth: i,
     });
@@ -409,9 +395,123 @@ const calculateConsultantSalaries = async ({
   await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
+const getInternalRevenue = async ({
+  $models,
+  consultants,
+  startDate,
+  endDate,
+  profitCentreIds,
+  projectAssignmentLookup,
+}) => {
+  // Internal Revenue: negative cost, when consultants belong to this profit centre works on external projects
+  const internalRevenues = [];
+  const consultantIds = consultants.map(c => c.id);
+
+  let consultantRosterEntries = [];
+  if (consultantIds.length > 0) {
+    consultantRosterEntries = await $models.RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.toDate(), endDate.toDate()],
+        },
+        consultant_id: {
+          $in: consultantIds,
+        },
+      },
+      include: [{ as: 'project' }, { as: 'consultant' }],
+      limit: 10000,
+    });
+  }
+
+  const externalRevenueEntries = consultantRosterEntries.filter(
+    ce => profitCentreIds.indexOf(ce.project.profitCentre_id) === -1,
+  );
+
+  externalRevenueEntries.forEach(ee => {
+    // Get internalRate: from projectAssignment or consultant
+    if (!projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`]) {
+      console.log(1, projectAssignmentLookup, ee);
+    }
+    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
+    if (!internalRate) {
+      const consultant = consultants.find(c => c.id === ee.consultant_id);
+      if (!consultant) {
+        console.log(1.5, consultants, ee);
+      }
+      ({ internalRate } = consultant);
+    }
+
+    internalRevenues.push({
+      rosterEntry: ee,
+      consultant: ee.consultant,
+      internalRate,
+    });
+  });
+
+  return internalRevenues;
+};
+
+const getInternalCharge = async ({
+  $models,
+  consultants,
+  costCenters,
+  startDate,
+  endDate,
+  projects,
+  projectAssignmentLookup,
+}) => {
+  const costCenterIds = costCenters.map(cc => cc.id);
+
+  // Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
+  const internalCharges = [];
+  const projectIds = projects.map(c => c.id);
+  let projectRosterEntries = [];
+  if (projectIds.length > 0) {
+    projectRosterEntries = await $models.RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.toDate(), endDate.toDate()],
+        },
+        project_id: {
+          $in: projectIds,
+        },
+      },
+      include: [{ as: 'project' }, { as: 'consultant' }],
+      limit: 10000,
+    });
+  }
+
+  const externalCostEntries = projectRosterEntries.filter(
+    pe => costCenterIds.indexOf(pe.consultant.costCenter_id) === -1,
+  );
+
+  externalCostEntries.forEach(ee => {
+    // Get internalRate: from projectAssignment or consultant
+    if (!projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`]) {
+      console.log(2, projectAssignmentLookup, ee);
+    }
+    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
+    if (!internalRate) {
+      const consultant = consultants.find(c => c.id === ee.consultant_id);
+      if (!consultant) {
+        console.log(2.5, consultants, ee);
+      }
+      ({ internalRate } = consultant);
+    }
+
+    internalCharges.push({
+      rosterEntry: ee,
+      consultant: ee.consultant,
+      internalRate,
+    });
+  });
+
+  return internalCharges;
+};
+
 const calculateInternalRates = async ({
   $models,
-  costCenterIds,
+  costCenters,
   consultants,
   financialYear,
   forecastElements,
@@ -420,48 +520,37 @@ const calculateInternalRates = async ({
   projects,
 }) => {
   const forecastEntries = {};
+  const startDate = moment({
+    year: financialYear,
+    month: 6,
+  });
+  const endDate = startDate.clone().add(1, 'year');
+
+  const costCentersInPc = costCenters.filter(cc => cc.profitCentre_id === profitCentre_id);
+  const consultantsInPc = consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id);
+  const projectsInPc = projects.filter(p => p.profitCentre_id === profitCentre_id);
 
   // Internal Revenue: negative cost, when consultants belong to this profit centre works on external projects
-  const internalRevenueEntries = [];
+  const internalRevenues = await getInternalRevenue({
+    $models,
+    consultants: consultantsInPc,
+    // projects: projectsInPc,
+    startDate,
+    endDate,
+    profitCentreIds: [profitCentre_id],
+    projectAssignmentLookup,
+  });
   const internalRevenueElementId = forecastElements.find(e => e.key === 'INTREV').id;
-  const consultantRosterEntries = await $models.RosterEntry.findAll({
-    where: {
-      consultant_id: {
-        $in: consultants.map(c => c.id),
-      },
-    },
-    include: [{ as: 'project' }, { as: 'consultant' }],
-    limit: 10000,
-  });
-
-  const externalRevenueEntries = consultantRosterEntries.filter(
-    ce => ce.project.profitCentre_id !== profitCentre_id,
-  );
-
-  externalRevenueEntries.forEach(ee => {
-    // Get internalRate: from projectAssignment or consultant
-    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
-    if (!internalRate) {
-      const consultant = consultants.find(c => c.id === ee.consultant_id);
-      ({ internalRate } = consultant);
-    }
-
-    internalRevenueEntries.push({
-      rosterEntry: ee,
-      consultantName: ee.consultant.name,
-      internalRate,
-    });
-  });
 
   // Calculate forecastEntries
-  internalRevenueEntries.forEach(({ internalRate, rosterEntry }) => {
+  internalRevenues.forEach(({ internalRate, rosterEntry }) => {
     const key = getForecastEntryKeyByDate(rosterEntry.date, 'Internal Revenue');
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
     if (!forecastEntries[key]) {
       forecastEntries[key] = {
         financialYear,
         financialMonth,
-        elementId: internalRevenueElementId,
+        forecastElement_id: internalRevenueElementId,
         profitCentre_id,
         amount: 0,
       };
@@ -470,46 +559,26 @@ const calculateInternalRates = async ({
   });
 
   // Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
-  const internalChargeEntries = [];
+  const internalCharges = await getInternalCharge({
+    $models,
+    consultants: consultantsInPc,
+    projects: projectsInPc,
+    costCenters: costCentersInPc,
+    startDate,
+    endDate,
+    projectAssignmentLookup,
+  });
   const internalChargeElementId = forecastElements.find(e => e.key === 'INTCH').id;
-  const projectRosterEntries = await $models.RosterEntry.findAll({
-    where: {
-      project_id: {
-        $in: projects.map(c => c.id),
-      },
-    },
-    include: [{ as: 'project' }, { as: 'consultant' }],
-    limit: 10000,
-  });
-
-  const externalCostEntries = projectRosterEntries.filter(
-    pe => costCenterIds.indexOf(pe.consultant.costCenter_id) === -1,
-  );
-
-  externalCostEntries.forEach(ee => {
-    // Get internalRate: from projectAssignment or consultant
-    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
-    if (!internalRate) {
-      const consultant = consultants.find(c => c.id === ee.consultant_id);
-      ({ internalRate } = consultant);
-    }
-
-    internalChargeEntries.push({
-      rosterEntry: ee,
-      consultantName: ee.consultant.name,
-      internalRate,
-    });
-  });
 
   // Calulate forecastEntries
-  internalChargeEntries.forEach(({ internalRate, rosterEntry }) => {
+  internalCharges.forEach(({ internalRate, rosterEntry }) => {
     const key = getForecastEntryKeyByDate(rosterEntry.date, 'Internal Charge');
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
     if (!forecastEntries[key]) {
       forecastEntries[key] = {
         financialYear,
         financialMonth,
-        elementId: internalChargeElementId,
+        forecastElement_id: internalChargeElementId,
         profitCentre_id,
         amount: 0,
       };
@@ -530,90 +599,125 @@ const calculateInternalRates = async ({
   await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
-const GetCalculationBaseData = ({}) => {};
+/**
+ * Get general data in preparation for calculations
+ *
+ * @param {object} $models
+ * @param {array of string} profitCentreIds
+ * @return {object} base data
+ */
+const calculateBaseData = async ({ $models, profitCentreIds }) => {
+  // Find all consultants
+  const costCenters = await $models.CostCenter.findAll({
+    where: {
+      profitCentre_id: {
+        $in: profitCentreIds,
+      },
+    },
+    limit: 1000,
+  });
+  const costCenterIds = costCenters.map(cc => cc.id);
 
-const calculateForecast = ({ $models, financialYear, profitCentreIds }) =>
+  const consultants = await $models.Consultant.findAll({
+    where: {
+      costCenter_id: {
+        $in: costCenterIds,
+      },
+    },
+    include: [{ as: 'costCenter' }],
+    limit: 1000,
+  });
+
+  const consultantIds = consultants.map(c => c.id);
+
+  // Find all projects
+  const projects = await $models.Project.findAll({
+    where: {
+      profitCentre_id: {
+        $in: profitCentreIds,
+      },
+    },
+    limit: 1000,
+  });
+
+  const projectIds = projects.map(p => p.id);
+
+  // Create lookup for project assignments
+  const pa1 = await $models.ProjectAssignment.findAll({
+    where: {
+      consultant_id: { $in: consultantIds },
+    },
+    limit: 1000,
+  });
+
+  const pa2 = await $models.ProjectAssignment.findAll({
+    where: {
+      project_id: { $in: projectIds },
+    },
+    limit: 1000,
+  });
+
+  const projectAssignmentLookup = {};
+  for (const pa of [...pa1, ...pa2]) {
+    projectAssignmentLookup[`${pa.consultant_id}.${pa.project_id}`] = pa;
+  }
+
+  // Find forecast elements
+  const forecastElements = await $models.ForecastElement.findAll({
+    where: {
+      key: {
+        $in: ['TMREV', 'CWAGES', 'SAL', 'INTCH', 'INTREV'],
+      },
+    },
+  });
+
+  // General data for calculations
+  return {
+    costCenters,
+    consultants,
+    forecastElements,
+    profitCentreIds,
+    projects,
+    projectAssignmentLookup,
+  };
+};
+
+/**
+ * Calculate five forecast elements for a profit centre:
+ *  - 'Service Revenue'
+ *  - 'Consultant Salaries'
+ *  - 'Contractor Wages'
+ *  - 'Internal Revenue'
+ *  - 'Internal Charge'
+ * Remove previous forecast entries and create new.
+ *
+ * @param {object} $models
+ * @param {string} profitCentre_id
+ * @param {array of object} costCenters
+ * @param {array of object} consultants
+ * @param {array of object} forecastElements
+ * @param {array of object} projects
+ * @param {object} projectAssignmentLookup
+ * @return {Promise}
+ */
+const calculateForecastForProfitCentre = params =>
+  Promise.all([
+    calculateServiceRevenueAndContractorWages(params),
+    calculateConsultantSalaries(params),
+    calculateInternalRates(params),
+  ]);
+
+/**
+ * Similar to above, but gets profitCentreIds instead of single profitCentre_id
+ */
+const calculateForecastForCompany = ({ profitCentreIds, ...others }) =>
   Promise.all(
-    profitCentreIds.map(async profitCentre_id => {
-      // Find all consultants in this profitCentre
-      const costCenters = await $models.CostCenter.findAll({
-        where: {
-          profitCentre_id,
-        },
-      });
-      const costCenterIds = costCenters.map(cc => cc.id);
-
-      const consultants = await $models.Consultant.findAll({
-        where: {
-          costCenter_id: {
-            $in: costCenterIds,
-          },
-        },
-      });
-
-      const consultantIds = consultants.map(c => c.id);
-
-      // Find all projects in this profitCentre
-      const projects = await $models.Project.findAll({
-        where: {
-          profitCentre_id,
-        },
-        limit: 1000,
-      });
-
-      const projectIds = projects.map(p => p.id);
-
-      // Create lookup for project assignments
-      const pa1 = await $models.ProjectAssignment.findAll({
-        where: {
-          consultant_id: { $in: consultantIds },
-        },
-        limit: 1000,
-      });
-
-      const pa2 = await $models.ProjectAssignment.findAll({
-        where: {
-          project_id: { $in: projectIds },
-        },
-        limit: 1000,
-      });
-
-      const projectAssignmentLookup = {};
-      for (const pa of [...pa1, ...pa2]) {
-        projectAssignmentLookup[`${pa.consultant_id}.${pa.project_id}`] = pa;
-      }
-
-      // Find forecast elements
-      const forecastElements = await $models.ForecastElement.findAll({
-        where: {
-          key: {
-            $in: ['TMREV', 'CWAGES', 'SAL', 'INTCH', 'INTREV'],
-          },
-        },
-      });
-
-      // Common params for calculations
-      const params = {
-        $models,
-        costCenterIds,
-        consultants,
-        financialYear,
-        forecastElements,
+    profitCentreIds.map(profitCentre_id =>
+      calculateForecastForProfitCentre({
         profitCentre_id,
-        projects,
-        projectAssignmentLookup,
-      };
-
-      // Process each profit center:
-      //  - calculate Service Revenue
-      //  - calculate Consultant Salaries
-      //  - calculate internal cost and revenue
-      return Promise.all([
-        calculateServiceRevenueAndContractorWages(params),
-        calculateConsultantSalaries(params),
-        calculateInternalRates(params),
-      ]);
-    }),
+        ...others,
+      }),
+    ),
   );
 
 export default Object.assign({}, time, rosterTime, {
@@ -622,5 +726,9 @@ export default Object.assign({}, time, rosterTime, {
   getWageRosterEntries,
   getServiceRevenueRosterEntries,
   getConsultantSalariesByMonth,
-  calculateForecast,
+  getInternalRevenue,
+  getInternalCharge,
+  calculateBaseData,
+  calculateForecastForProfitCentre,
+  calculateForecastForCompany,
 });
