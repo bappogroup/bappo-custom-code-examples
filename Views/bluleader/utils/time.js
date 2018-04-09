@@ -1,14 +1,14 @@
 import moment from 'moment';
 
-const fiscalOffset = 6;
+export const fiscalOffset = 6;
 
-const monthFinancialToCalendar = (financialMonth, offset = fiscalOffset) => {
+export const monthFinancialToCalendar = (financialMonth, offset = fiscalOffset) => {
   let calendarMonth = +financialMonth + offset;
   if (calendarMonth > 12) calendarMonth -= 12;
   return calendarMonth;
 };
 
-const monthCalendarToFinancial = (calendarMonth, offset = fiscalOffset) => {
+export const monthCalendarToFinancial = (calendarMonth, offset = fiscalOffset) => {
   let financialMonth = +calendarMonth - offset;
   if (financialMonth < 0) financialMonth += 12;
   return financialMonth;
@@ -19,7 +19,7 @@ const monthCalendarToFinancial = (calendarMonth, offset = fiscalOffset) => {
  *
  * @return {array} month array, containing financialMonth, calendarMonth and label of one year
  */
-const generateMonthArray = (offset = fiscalOffset) => {
+export const generateMonthArray = (offset = fiscalOffset) => {
   const dict = [];
   for (let i = 1; i < 13; i++) {
     const calendarMonth = monthFinancialToCalendar(i, offset);
@@ -40,7 +40,7 @@ const generateMonthArray = (offset = fiscalOffset) => {
  * @param {string || moment} date
  * @return {object} contains financialYear and financialMonth
  */
-const getFinancialTimeFromDate = (date = moment()) => {
+export const getFinancialTimeFromDate = (date = moment()) => {
   let financialYear = moment(date).year();
   const quarter = moment(date).quarter();
   if (quarter === 1 || quarter === 2) financialYear -= 1;
@@ -60,7 +60,7 @@ const getFinancialTimeFromDate = (date = moment()) => {
  * @param {number} offset - how many months between calendar and financial month
  * @return {object} calendar object
  */
-const financialToCalendar = ({ financialYear, financialMonth }, offset = fiscalOffset) => {
+export const financialToCalendar = ({ financialYear, financialMonth }, offset = fiscalOffset) => {
   const calendarMonth = monthFinancialToCalendar(+financialMonth);
 
   let calendarYear = +financialYear;
@@ -70,13 +70,4 @@ const financialToCalendar = ({ financialYear, financialMonth }, offset = fiscalO
     calendarYear,
     calendarMonth,
   };
-};
-
-export default {
-  fiscalOffset,
-  financialToCalendar,
-  getFinancialTimeFromDate,
-  generateMonthArray,
-  monthFinancialToCalendar,
-  monthCalendarToFinancial,
 };

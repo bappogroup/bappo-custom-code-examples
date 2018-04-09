@@ -1,7 +1,9 @@
 import moment from 'moment';
 import _ from 'lodash';
-import time from './time';
-import * as rosterTime from './rosterTime';
+import * as time from './time';
+
+export * from './time';
+export * from './rosterTime';
 
 /**
  * Generate a unique key for a forecast entry in a table.
@@ -10,7 +12,7 @@ import * as rosterTime from './rosterTime';
  * @param {string} rowIdentifier - a string identifying a row in the table
  * @return {string} entry key
  */
-const getForecastEntryKeyByDate = (date, rowIdentifier) => {
+export const getForecastEntryKeyByDate = (date, rowIdentifier) => {
   const calendarYear = moment(date).year();
   const calendarMonth = moment(date).month() + 1;
   return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
@@ -25,7 +27,12 @@ const getForecastEntryKeyByDate = (date, rowIdentifier) => {
  * @param {bool} shouldConvertToCalendar - should year and month passed be converted to calendar
  * @return {string} entry key
  */
-const getForecastEntryKey = (year, month, rowIdentifier, shouldConvertToCalendar = false) => {
+export const getForecastEntryKey = (
+  year,
+  month,
+  rowIdentifier,
+  shouldConvertToCalendar = false,
+) => {
   if (!shouldConvertToCalendar) return `${year}.${month}.${rowIdentifier}`;
 
   const { calendarYear, calendarMonth } = time.financialToCalendar({
@@ -67,7 +74,12 @@ const rosterEntryIncursContractorWages = rosterEntry => {
  *
  * @return {array} roster entry array
  */
-const getWageRosterEntries = async ({ $models, calendarYear, calendarMonth, projects }) => {
+export const getWageRosterEntries = async ({
+  $models,
+  calendarYear,
+  calendarMonth,
+  consultants,
+}) => {
   if (!(calendarYear && calendarMonth)) return [];
 
   // Fetch roster entries of given month
@@ -88,8 +100,8 @@ const getWageRosterEntries = async ({ $models, calendarYear, calendarMonth, proj
             .toDate(),
         ],
       },
-      project_id: {
-        $in: projects.map(pj => pj.id),
+      consultant_id: {
+        $in: consultants.map(c => c.id),
       },
     },
     include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
@@ -113,7 +125,7 @@ const getWageRosterEntries = async ({ $models, calendarYear, calendarMonth, proj
  *
  * @return {object} consultantName-revenue pairs
  */
-const getServiceRevenueRosterEntries = async ({
+export const getServiceRevenueRosterEntries = async ({
   $models,
   calendarYear,
   calendarMonth,
@@ -168,7 +180,7 @@ const getServiceRevenueRosterEntries = async ({
  *
  * @return {array} array of object containing consultant and salary
  */
-const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMonth }) => {
+export const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMonth }) => {
   const consultantSalaries = [];
 
   for (const consultant of consultants) {
@@ -219,7 +231,7 @@ const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMon
 
 // Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
 // And update the forecast entrie records
-const calculateServiceRevenueAndContractorWages = async ({
+export const calculateServiceRevenueAndContractorWages = async ({
   $models,
   financialYear,
   forecastElements,
@@ -235,10 +247,8 @@ const calculateServiceRevenueAndContractorWages = async ({
   const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
   if (!(projects.length && serviceRevenueElementId && contractorWagesElementId)) return;
 
-  const consultantsInPc = consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id);
-  const projectsInPc = projects.filter(p => p.profitCentre_id === profitCentre_id);
-  const consultantIds = consultantsInPc.map(c => c.id);
-  const projectIds = projectsInPc.map(p => p.id);
+  const consultantIds = consultants.map(c => c.id);
+  const projectIds = projects.map(p => p.id);
 
   // Fetch roster entries for the whole financial year, of this profit centre
   // include consultants if it's a contractor
@@ -263,7 +273,7 @@ const calculateServiceRevenueAndContractorWages = async ({
     });
   }
   let rosterEntriesByConsultants = [];
-  if (consultantIds.lengt > 0) {
+  if (consultantIds.length > 0) {
     rosterEntriesByConsultants = await RosterEntry.findAll({
       where: {
         date: {
@@ -286,7 +296,7 @@ const calculateServiceRevenueAndContractorWages = async ({
       financialMonth,
     });
 
-    // Service Revenue
+    // Service Revenue. It must exist!
     const { dayRate } = projectAssignmentLookup[
       `${rosterEntry.consultant_id}.${rosterEntry.project_id}`
     ];
@@ -318,6 +328,8 @@ const calculateServiceRevenueAndContractorWages = async ({
 
     // Contractor Wages
     if (rosterEntryIncursContractorWages(rosterEntry)) {
+      const { dailyRate } = rosterEntry.consultant;
+
       const contractorWagesKey = getForecastEntryKey(
         calendarYear,
         calendarMonth,
@@ -333,7 +345,7 @@ const calculateServiceRevenueAndContractorWages = async ({
           amount: 0,
         };
       }
-      forecastEntries[contractorWagesKey].amount += +rosterEntry.consultant.dailyRate;
+      forecastEntries[contractorWagesKey].amount += +dailyRate;
     }
   }
 
@@ -350,7 +362,7 @@ const calculateServiceRevenueAndContractorWages = async ({
   await ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
-const calculateConsultantSalaries = async ({
+export const calculateConsultantSalaries = async ({
   $models,
   financialYear,
   forecastElements,
@@ -363,7 +375,7 @@ const calculateConsultantSalaries = async ({
   // Calculate forecast entries by adding up monthly salaris by cost centers
   for (let i = 1; i < 13; i++) {
     const consultantSalaries = getConsultantSalariesByMonth({
-      consultants: consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id),
+      consultants,
       financialYear,
       financialMonth: i,
     });
@@ -395,7 +407,7 @@ const calculateConsultantSalaries = async ({
   await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
-const getInternalRevenue = async ({
+export const getInternalRevenue = async ({
   $models,
   consultants,
   startDate,
@@ -451,7 +463,7 @@ const getInternalRevenue = async ({
   return internalRevenues;
 };
 
-const getInternalCharge = async ({
+export const getInternalCharge = async ({
   $models,
   consultants,
   costCenters,
@@ -526,15 +538,10 @@ const calculateInternalRates = async ({
   });
   const endDate = startDate.clone().add(1, 'year');
 
-  const costCentersInPc = costCenters.filter(cc => cc.profitCentre_id === profitCentre_id);
-  const consultantsInPc = consultants.filter(c => c.costCenter.profitCentre_id === profitCentre_id);
-  const projectsInPc = projects.filter(p => p.profitCentre_id === profitCentre_id);
-
   // Internal Revenue: negative cost, when consultants belong to this profit centre works on external projects
   const internalRevenues = await getInternalRevenue({
     $models,
-    consultants: consultantsInPc,
-    // projects: projectsInPc,
+    consultants,
     startDate,
     endDate,
     profitCentreIds: [profitCentre_id],
@@ -561,9 +568,9 @@ const calculateInternalRates = async ({
   // Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
   const internalCharges = await getInternalCharge({
     $models,
-    consultants: consultantsInPc,
-    projects: projectsInPc,
-    costCenters: costCentersInPc,
+    consultants,
+    projects,
+    costCenters,
     startDate,
     endDate,
     projectAssignmentLookup,
@@ -606,8 +613,8 @@ const calculateInternalRates = async ({
  * @param {array of string} profitCentreIds
  * @return {object} base data
  */
-const calculateBaseData = async ({ $models, profitCentreIds }) => {
-  // Find all consultants
+export const calculateBaseData = async ({ $models, profitCentreIds }) => {
+  // Find cost centers and consultants of all profit centres
   const costCenters = await $models.CostCenter.findAll({
     where: {
       profitCentre_id: {
@@ -675,9 +682,8 @@ const calculateBaseData = async ({ $models, profitCentreIds }) => {
   return {
     costCenters,
     consultants,
-    forecastElements,
-    profitCentreIds,
     projects,
+    forecastElements,
     projectAssignmentLookup,
   };
 };
@@ -693,6 +699,7 @@ const calculateBaseData = async ({ $models, profitCentreIds }) => {
  *
  * @param {object} $models
  * @param {string} profitCentre_id
+ * @param {string} financialYear
  * @param {array of object} costCenters
  * @param {array of object} consultants
  * @param {array of object} forecastElements
@@ -700,7 +707,7 @@ const calculateBaseData = async ({ $models, profitCentreIds }) => {
  * @param {object} projectAssignmentLookup
  * @return {Promise}
  */
-const calculateForecastForProfitCentre = params =>
+export const calculateForecastForProfitCentre = params =>
   Promise.all([
     calculateServiceRevenueAndContractorWages(params),
     calculateConsultantSalaries(params),
@@ -710,25 +717,28 @@ const calculateForecastForProfitCentre = params =>
 /**
  * Similar to above, but gets profitCentreIds instead of single profitCentre_id
  */
-const calculateForecastForCompany = ({ profitCentreIds, ...others }) =>
+export const calculateForecastForCompany = ({
+  profitCentreIds,
+  costCenters,
+  consultants,
+  projects,
+  ...others
+}) =>
   Promise.all(
-    profitCentreIds.map(profitCentre_id =>
-      calculateForecastForProfitCentre({
-        profitCentre_id,
-        ...others,
-      }),
-    ),
-  );
+    profitCentreIds.map(profitCentre_id => {
+      // Filter out resources not in this profit centre
+      const costCentersInPc = costCenters.filter(cc => cc.profitCentre_id === profitCentre_id);
+      const consultantsInPc = consultants.filter(
+        c => c.costCenter.profitCentre_id === profitCentre_id,
+      );
+      const projectsInPc = projects.filter(p => p.profitCentre_id === profitCentre_id);
 
-export default Object.assign({}, time, rosterTime, {
-  getForecastEntryKey,
-  getForecastEntryKeyByDate,
-  getWageRosterEntries,
-  getServiceRevenueRosterEntries,
-  getConsultantSalariesByMonth,
-  getInternalRevenue,
-  getInternalCharge,
-  calculateBaseData,
-  calculateForecastForProfitCentre,
-  calculateForecastForCompany,
-});
+      return calculateForecastForProfitCentre({
+        profitCentre_id,
+        consultants: consultantsInPc,
+        costCenters: costCentersInPc,
+        projects: projectsInPc,
+        ...others,
+      });
+    }),
+  );

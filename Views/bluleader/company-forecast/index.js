@@ -3,17 +3,15 @@
 
 import React from 'react';
 import { styled } from 'bappo-components';
-import utils from 'utils';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import ForecastReport from 'forecast-report';
-
-const {
+import {
   calculateForecastForCompany,
   calculateBaseData,
   getForecastEntryKey,
   getFinancialTimeFromDate,
   generateMonthArray,
-} = utils;
+} from 'utils';
 
 const newEntry = (financialYear, month, element, amount) => ({
   newRecord: true,
@@ -52,7 +50,7 @@ class ForecastMatrix extends React.Component {
         company,
         financialYear,
       });
-      await this.loadData();
+      await this.calculate();
     }
   }
 
@@ -101,7 +99,7 @@ class ForecastMatrix extends React.Component {
           company: selectedCompany,
           financialYear: selectedFinancialYear,
         });
-        await this.loadData();
+        await this.calculate();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           company_id: companyId,
           financialYear: selectedFinancialYear,
@@ -319,19 +317,9 @@ class ForecastMatrix extends React.Component {
 
   calculateReportData = async (financialMonth, elementKey) => {
     const { profitCentres, financialYear } = this.state;
-    let { calculationBaseData } = this.state;
     if (!profitCentres.length) return;
 
-    // Calculate base data if needed
-    if (!calculationBaseData) {
-      calculationBaseData = await calculateBaseData({
-        $models: this.props.$models,
-        profitCentreIds: profitCentres.map(pc => pc.id),
-      });
-    }
-
     this.setState({
-      calculationBaseData,
       reportParams: {
         elementKey,
         financialYear,

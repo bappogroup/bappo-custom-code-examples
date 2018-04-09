@@ -1,16 +1,14 @@
 import React from 'react';
 import { styled } from 'bappo-components';
-import utils from 'utils';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import ForecastReport from 'forecast-report';
-
-const {
+import {
   calculateForecastForProfitCentre,
   calculateBaseData,
   getForecastEntryKey,
   getFinancialTimeFromDate,
   generateMonthArray,
-} = utils;
+} from 'utils';
 
 const newEntry = (financialYear, financialMonth, element, amount) => ({
   financialYear,
@@ -31,9 +29,12 @@ class ForecastMatrix extends React.Component {
     blur: false,
     reportParams: null,
     calculationBaseData: null,
+    cos_elements: [],
+    rev_elements: [],
+    oh_elements: [],
   };
 
-  async componentWillMount() {
+  async componentDidMount() {
     this.monthArray = generateMonthArray();
 
     // Load user preferences
@@ -47,7 +48,7 @@ class ForecastMatrix extends React.Component {
         profitCentre,
         financialYear,
       });
-      await this.loadData();
+      await this.calculate();
     }
   }
 
@@ -95,7 +96,7 @@ class ForecastMatrix extends React.Component {
           profitCentre,
           financialYear,
         });
-        await this.loadData();
+        await this.calculate();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           profitcentre_id: profitCentreId,
           financialYear,
@@ -338,19 +339,9 @@ class ForecastMatrix extends React.Component {
 
   calculateReportData = async (financialMonth, elementKey) => {
     const { profitCentre, financialYear } = this.state;
-    let { calculationBaseData } = this.state;
     if (!(profitCentre && financialYear)) return;
 
-    // Calculate base data if needed
-    if (!calculationBaseData) {
-      calculationBaseData = await calculateBaseData({
-        $models: this.props.$models,
-        profitCentreIds: [profitCentre.id],
-      });
-    }
-
     this.setState({
-      calculationBaseData,
       reportParams: {
         elementKey,
         financialYear,

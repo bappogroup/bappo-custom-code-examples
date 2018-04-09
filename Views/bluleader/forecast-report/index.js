@@ -1,7 +1,14 @@
 import React from 'react';
 import moment from 'moment';
-import utils from 'utils';
 import { ActivityIndicator, styled } from 'bappo-components';
+import {
+  financialToCalendar,
+  getWageRosterEntries,
+  getServiceRevenueRosterEntries,
+  getConsultantSalariesByMonth,
+  getInternalRevenue,
+  getInternalCharge,
+} from 'utils';
 
 const getTableKey = (x, y) => `${x}.${y}`;
 
@@ -27,15 +34,6 @@ const forecastElements = [
     name: 'Internal Charge',
   },
 ];
-
-const {
-  financialToCalendar,
-  getWageRosterEntries,
-  getServiceRevenueRosterEntries,
-  getConsultantSalariesByMonth,
-  getInternalRevenue,
-  getInternalCharge,
-} = utils;
 
 class ForecastReport extends React.Component {
   state = {
@@ -73,6 +71,7 @@ class ForecastReport extends React.Component {
       prevProps.financialYear !== this.props.financialYear ||
       prevProps.financialMonth !== this.props.financialMonth
     ) {
+      await this.setState({ loading: true });
       // Update selected forecast elements
       const elements = elementKey
         ? forecastElements.filter(e => e.key === elementKey)
@@ -99,7 +98,7 @@ class ForecastReport extends React.Component {
               $models,
               calendarYear,
               calendarMonth,
-              projects,
+              consultants,
             }).then(wageRosterEntries => {
               wageRosterEntries.forEach(entry => {
                 const key = getTableKey(entry.consultant.name, 'Contractor Wages');
@@ -132,7 +131,10 @@ class ForecastReport extends React.Component {
               projectAssignmentLookup,
             }).then(revenues => {
               Object.entries(revenues).forEach(([consultantName, revenue]) => {
-                if (!consultants.find(c => c.name === consultantName)) {
+                if (
+                  !consultants.find(c => c.name === consultantName) &&
+                  !externalConsultants.find(c => c.name === consultantName)
+                ) {
                   externalConsultants.push({ name: consultantName });
                 }
                 const key = getTableKey(consultantName, 'Service Revenue');
@@ -174,8 +176,11 @@ class ForecastReport extends React.Component {
               projectAssignmentLookup,
             }).then(internalCharges => {
               internalCharges.forEach(({ consultant, internalRate }) => {
-                if (!consultants.find(c => c.name === consultant.name)) {
-                  externalConsultants.push(consultant);
+                if (
+                  !consultants.find(c => c.name === consultant.name) &&
+                  !externalConsultants.find(c => c.name === consultant.name)
+                ) {
+                  externalConsultants.push({ name: consultant.name });
                 }
                 const key = getTableKey(consultant.name, 'Internal Charge');
                 if (!entries[key]) entries[key] = 0;
@@ -203,6 +208,7 @@ class ForecastReport extends React.Component {
       });
 
       this.setState({
+        loading: false,
         consultants,
         externalConsultants,
         entries,
@@ -226,7 +232,10 @@ class ForecastReport extends React.Component {
   );
 
   render() {
-    const { consultants, externalConsultants, name, totals, elements } = this.state;
+    const { loading, consultants, externalConsultants, name, totals, elements } = this.state;
+    console.log(loading);
+    // return 'Loading...';
+    if (loading) return <ActivityIndicator />;
     if (!(name && elements && consultants && this.props.financialMonth && this.props.financialYear))
       return null;
 
