@@ -6,7 +6,6 @@ import {
   getForecastEntryKey,
   getForecastEntryKeyByDate,
   getFinancialTimeFromDate,
-  monthCalendarToFinancial,
   calendarToFinancial,
 } from 'utils';
 
@@ -36,9 +35,7 @@ class ForecastMatrix extends React.Component {
   state = {
     loading: true,
     project: null,
-
     entries: {}, // ProjectForecastEntry map
-    financialYear: null, // Which financial year is being viewed now (project might last over one financial year)
     months: [], // lasting months of the project, e.g. [{ calendarMonth: 2018, calendarMonth: 1}] for Jan 2018
   };
 
@@ -173,7 +170,6 @@ class ForecastMatrix extends React.Component {
     await this.setState({
       loading: false,
       entries,
-      financialYear,
       months,
     });
     this.calculateMargins();
@@ -259,7 +255,7 @@ class ForecastMatrix extends React.Component {
   save = async () => {
     this.setState({ saving: true });
     const { ProjectForecastEntry } = this.props.$models;
-    const { project, financialYear, entries } = this.state;
+    const { project, entries } = this.state;
 
     // Delete old entries
     await ProjectForecastEntry.destroy({
@@ -268,7 +264,6 @@ class ForecastMatrix extends React.Component {
           $in: ['1', '2'],
         },
         project_id: project.id,
-        // financialYear: financialYear.toString(),
       },
     });
 
@@ -281,8 +276,8 @@ class ForecastMatrix extends React.Component {
     this.setState({ saving: false });
   };
 
-  renderRow = (type, disabled, isMargin) => (
-    <Row isMargin={isMargin}>
+  renderRow = (type, disabled) => (
+    <Row>
       <RowLabel>
         <span>{type}</span>
       </RowLabel>
@@ -295,8 +290,10 @@ class ForecastMatrix extends React.Component {
     const entry = this.state.entries[key];
     const value = entry && entry.amount;
 
+    const isMargin = type === 'Planned Margin' || type === 'Actual Margin';
+
     return (
-      <Cell>
+      <Cell isMargin={isMargin}>
         <Input
           disabled={disabled}
           value={value}
@@ -323,38 +320,37 @@ class ForecastMatrix extends React.Component {
 
     return (
       <Container saving={saving}>
-        <HeaderContainer>
-          <Heading>Project: {project.name}</Heading>
-          <TextButton onClick={this.setFilters}>change</TextButton>
-        </HeaderContainer>
-        <HeaderRow>
-          <RowLabel />
-          {months.map((month, index) => {
-            return (
-              <Cell>
-                {(index === 0 || month.calendarMonth === 1) && (
-                  <YearLabel>{month.calendarYear}</YearLabel>
-                )}
-                <HeaderLabel>
-                  {moment()
-                    .month(month.calendarMonth - 1)
-                    .format('MMM')}
-                </HeaderLabel>
-              </Cell>
-            );
-            // Only display months of one financial year
-            // if (true || month.calendarYear === financialYear) {
-            // }
-            // return null;
-          })}
-        </HeaderRow>
-        {this.renderRow('Revenue')}
-        <Space />
-        {this.renderRow('Planned Cost')}
-        {this.renderRow('Planned Margin', true, true)}
-        <Space />
-        {this.renderRow('Cost from Roster', true)}
-        {this.renderRow('Actual Margin', true, true)}
+        <TableContainer>
+          <HeaderContainer>
+            <Heading>Project: {project.name}</Heading>
+            <TextButton onClick={this.setFilters}>change</TextButton>
+          </HeaderContainer>
+          <HeaderRow>
+            <RowLabel />
+            {months.map((month, index) => {
+              return (
+                <Cell style={{ border: 'none' }}>
+                  {(index === 0 || month.calendarMonth === 1) && (
+                    <YearLabel>{month.calendarYear}</YearLabel>
+                  )}
+                  <HeaderLabel>
+                    {moment()
+                      .month(month.calendarMonth - 1)
+                      .format('MMM')}
+                  </HeaderLabel>
+                </Cell>
+              );
+            })}
+          </HeaderRow>
+          {this.renderRow('Revenue')}
+          <Space />
+          {this.renderRow('Planned Cost')}
+          {this.renderRow('Planned Margin', true)}
+          <Space />
+          {this.renderRow('Cost from Roster', true)}
+          {this.renderRow('Actual Margin', true)}
+        </TableContainer>
+
         <SaveButton onClick={this.save}>Save</SaveButton>
       </Container>
     );
@@ -363,16 +359,23 @@ class ForecastMatrix extends React.Component {
 
 export default ForecastMatrix;
 
+const Container = styled.div`
+  margin-top: 50px;
+  overflow-y: scroll;
+  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
+`;
+
+const TableContainer = styled.div`
+  overflow-x: scroll;
+`;
+
 const Row = styled.div`
   padding-right: 30px;
   padding-left: 30px;
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  border-bottom: 1px solid #eee;
   line-height: 30px;
-
-  ${props => props.isMargin && 'border-bottom: none; font-weight: bold;'};
 `;
 
 const Space = styled.div`
@@ -392,12 +395,11 @@ const RowLabel = styled.div`
 
 const Cell = styled.div`
   position: relative;
-  padding-left: 1px;
-  padding-right: 1px;
-  display: flex;
-  flex-direction: row;
   flex: 1;
+  display: flex;
   justify-content: center;
+  min-width: 150px;
+  ${props => props.isMargin && 'border-top: 1px solid #eee; font-weight: bold;'};
 `;
 
 const HeaderLabel = styled.div`
@@ -417,11 +419,6 @@ const Input = styled.input`
     outline: none;
     border-bottom: 1px solid gray;
   }
-`;
-
-const Container = styled.div`
-  ${props => (props.saving ? 'filter: blur(3px); opacity: 0.5;' : '')} margin-top: 50px;
-  overflow-y: scroll;
 `;
 
 const SaveButton = styled.div`

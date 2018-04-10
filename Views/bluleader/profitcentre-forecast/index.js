@@ -355,10 +355,10 @@ class ForecastMatrix extends React.Component {
   renderTotal = (month, key) => <TotalCell>{this.state.totals[key][month]}</TotalCell>;
 
   renderTotals = (key, label) => (
-    <RowSubTotal>
+    <Row>
       <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
       {this.monthArray.map(month => this.renderTotal(month.financialMonth, key))}
-    </RowSubTotal>
+    </Row>
   );
 
   render() {
@@ -385,41 +385,44 @@ class ForecastMatrix extends React.Component {
 
     return (
       <Container blur={blur}>
-        <HeaderContainer>
-          <Heading>
-            Profit centre: {profitCentre.name}, financial year {financialYear}
-          </Heading>
-          <TextButton onClick={this.setFilters}>change</TextButton>
-          <TextButton onClick={this.calculate}>calculate</TextButton>
-        </HeaderContainer>
-        <HeaderRow>
-          <RowLabel />
-          {this.monthArray.map(({ label, financialMonth }) => (
-            <ClickableCell
-              onClick={() =>
-                this.calculateReportData(financialMonth, null, ['consultant', 'project'])
-              }
-            >
-              {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
-              <HeaderLabel>{label}</HeaderLabel>{' '}
-            </ClickableCell>
-          ))}
-        </HeaderRow>
-        {this.state.rev_elements.map(this.renderRow)}
-        {this.renderTotals('rev', 'Total Revenue')}
-        <Space />
-        {this.state.cos_elements.map(this.renderRow)}
-        {this.renderTotals('cos', 'Total Cost of Sales')}
+        <TableContainer>
+          <HeaderContainer>
+            <Heading>
+              Profit centre: {profitCentre.name}, financial year {financialYear}
+            </Heading>
+            <TextButton onClick={this.setFilters}>change</TextButton>
+            <TextButton onClick={this.calculate}>calculate</TextButton>
+          </HeaderContainer>
+          <HeaderRow>
+            <RowLabel />
+            {this.monthArray.map(({ label, financialMonth }) => (
+              <ClickableCell
+                style={{ border: 'none' }}
+                onClick={() =>
+                  this.calculateReportData(financialMonth, null, ['consultant', 'project'])
+                }
+              >
+                {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
+                <HeaderLabel>{label}</HeaderLabel>{' '}
+              </ClickableCell>
+            ))}
+          </HeaderRow>
+          {this.state.rev_elements.map(this.renderRow)}
+          {this.renderTotals('rev', 'Total Revenue')}
+          <Space />
+          {this.state.cos_elements.map(this.renderRow)}
+          {this.renderTotals('cos', 'Total Cost of Sales')}
 
-        <Space />
-        {this.renderTotals('gp', 'Gross Profit')}
+          <Space />
+          {this.renderTotals('gp', 'Gross Profit')}
 
-        <Space />
-        {this.state.oh_elements.map(this.renderRow)}
-        {this.renderTotals('oh', 'Total Overheads')}
+          <Space />
+          {this.state.oh_elements.map(this.renderRow)}
+          {this.renderTotals('oh', 'Total Overheads')}
 
-        <Space />
-        {this.renderTotals('np', 'Net Profit')}
+          <Space />
+          {this.renderTotals('np', 'Net Profit')}
+        </TableContainer>
 
         <SaveButton onClick={this.save}>Save</SaveButton>
 
@@ -436,19 +439,23 @@ class ForecastMatrix extends React.Component {
 
 export default ForecastMatrix;
 
+const Container = styled.div`
+  margin-top: 50px;
+  overflow-y: scroll;
+  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
+`;
+
+const TableContainer = styled.div`
+  overflow-x: scroll;
+`;
+
 const Row = styled.div`
   padding-right: 30px;
   padding-left: 30px;
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  border-top: 1px solid #eee;
   line-height: 30px;
-`;
-
-const RowSubTotal = styled(Row)`
-  border-top: 1px solid black;
-  border-bottom: 1px solid black;
 `;
 
 const HeaderRow = styled(Row)`
@@ -464,12 +471,11 @@ const RowLabel = styled.div`
 
 const Cell = styled.div`
   position: relative;
-  padding-left: 1px;
-  padding-right: 1px;
-  display: flex;
-  flex-direction: row;
   flex: 1;
+  display: flex;
   justify-content: center;
+  min-width: 150px;
+  border-top: 1px solid #eee;
 `;
 
 const ClickableCell = styled(Cell)`
@@ -477,6 +483,15 @@ const ClickableCell = styled(Cell)`
     cursor: pointer;
     opacity: 0.7;
   }
+`;
+
+const TotalCell = styled.div`
+  text-align: center;
+  flex: 1;
+  font-weight: bold;
+  min-width: 150px;
+  border-top: 1px solid black;
+  border-bottom: 1px solid black;
 `;
 
 const HeaderLabel = styled.div`
@@ -496,18 +511,6 @@ const Input = styled.input`
     outline: none;
     border-bottom: 1px solid gray;
   }
-`;
-
-const Container = styled.div`
-  margin-top: 50px;
-  overflow-y: scroll;
-  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
-`;
-
-const TotalCell = styled.div`
-  text-align: center;
-  flex: 1;
-  font-weight: bold;
 `;
 
 const Space = styled.div`

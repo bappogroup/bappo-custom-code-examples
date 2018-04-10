@@ -365,7 +365,7 @@ class ForecastReport extends React.Component {
 export default ForecastReport;
 
 const Container = styled.div`
-  margin-top: 50px;
+  margin-top: 80px;
 `;
 
 const Title = styled.div`
