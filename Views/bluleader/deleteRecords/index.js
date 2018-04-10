@@ -13,6 +13,18 @@ class Dummy extends React.Component {
     }
   };
 
+  deleteAllProjectForecastEntries = async () => {
+    const { ProjectForecastEntry } = this.props.$models;
+    try {
+      await ProjectForecastEntry.destroy({
+        where: {},
+      });
+      alert('done');
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   deleteAllRosterEntries = async () => {
     const { RosterEntry } = this.props.$models;
     try {
@@ -40,15 +52,12 @@ class Dummy extends React.Component {
   render() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <button onClick={this.deleteAllForecastEntries}>
-          Delete all Foreast Entry Records
+        <button onClick={this.deleteAllForecastEntries}>Delete all Forecast Entry Records</button>
+        <button onClick={this.deleteAllProjectForecastEntries}>
+          Delete all Project Forecast Entry Records
         </button>
-        <button onClick={this.deleteAllRosterEntries}>
-          Delete all Roster Entry Records
-        </button>
-        <button onClick={this.deleteAllUserPreferences}>
-          Delete all User Preferences
-        </button>
+        <button onClick={this.deleteAllRosterEntries}>Delete all Roster Entry Records</button>
+        <button onClick={this.deleteAllUserPreferences}>Delete all User Preferences</button>
       </div>
     );
   }

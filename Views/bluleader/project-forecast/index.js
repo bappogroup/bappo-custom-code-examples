@@ -7,11 +7,12 @@ import {
   getForecastEntryKeyByDate,
   getFinancialTimeFromDate,
   monthCalendarToFinancial,
+  calendarToFinancial,
 } from 'utils';
 
 const forecastTypeLabelToValue = label => {
   switch (label.toString()) {
-    case 'Cost':
+    case 'Planned Cost':
       return '1';
     case 'Revenue':
       return '2';
@@ -23,7 +24,7 @@ const forecastTypeLabelToValue = label => {
 const forecastTypeValueToLabel = value => {
   switch (value.toString()) {
     case '1':
-      return 'Cost';
+      return 'Planned Cost';
     case '2':
       return 'Revenue';
     default:
@@ -35,8 +36,7 @@ class ForecastMatrix extends React.Component {
   state = {
     loading: true,
     project: null,
-    costTypes: ['Cost'],
-    revenueTypes: ['Revenue'],
+
     entries: {}, // ProjectForecastEntry map
     financialYear: null, // Which financial year is being viewed now (project might last over one financial year)
     months: [], // lasting months of the project, e.g. [{ calendarMonth: 2018, calendarMonth: 1}] for Jan 2018
@@ -107,7 +107,7 @@ class ForecastMatrix extends React.Component {
   };
 
   loadData = async () => {
-    const { project, costTypes, revenueTypes } = this.state;
+    const { project } = this.state;
     if (!project) return;
 
     const { ProjectForecastEntry, RosterEntry } = this.props.$models;
@@ -170,24 +170,6 @@ class ForecastMatrix extends React.Component {
       entries[key] = entry;
     });
 
-    // Create new entries for empty cells
-    costTypes.concat(revenueTypes).forEach(type => {
-      months.forEach(month => {
-        const key = getForecastEntryKey(month.calendarYear, month.calendarMonth, type);
-
-        if (!entries[key]) {
-          const financialMonth = monthCalendarToFinancial(month.calendarMonth);
-          entries[key] = {
-            forecastType: forecastTypeLabelToValue(type),
-            financialYear,
-            financialMonth,
-            project_id: project.id,
-            amount: 0,
-          };
-        }
-      });
-    });
-
     await this.setState({
       loading: false,
       entries,
@@ -197,20 +179,25 @@ class ForecastMatrix extends React.Component {
     this.calculateMargins();
   };
 
-  handleCellChange = async (entry, amount) => {
-    const key = getForecastEntryKey(
-      entry.financialYear,
-      entry.financialMonth,
-      forecastTypeValueToLabel(entry.forecastType),
-      true,
-    );
+  handleCellChange = async (month, type, amount) => {
+    if (isNaN(amount)) return;
+
+    const { calendarYear, calendarMonth } = month;
+    const { financialYear, financialMonth } = calendarToFinancial(month);
+    const key = getForecastEntryKey(calendarYear, calendarMonth, type);
 
     await this.setState(state => {
       const { entries } = state;
-      entries[key].amount = +amount;
+      entries[key] = {
+        forecastType: forecastTypeLabelToValue(type),
+        financialYear,
+        financialMonth,
+        project_id: this.state.project.id,
+        amount: +amount,
+      };
       return {
         ...state,
-        entries: this.calculateMargins(entries),
+        entries,
       };
     });
     this.calculateMargins();
@@ -218,10 +205,19 @@ class ForecastMatrix extends React.Component {
 
   calculateMargins = () => {
     const { entries, months } = this.state;
-    const entiresWithMargins = Object.assign({}, entries);
+    const entriesWithMargins = Object.assign({}, entries);
 
     months.forEach(month => {
-      const key = getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Margin');
+      const plannedMarginKey = getForecastEntryKey(
+        month.calendarYear,
+        month.calendarMonth,
+        'Planned Margin',
+      );
+      const actualMarginKey = getForecastEntryKey(
+        month.calendarYear,
+        month.calendarMonth,
+        'Actual Margin',
+      );
 
       const revenueEntry =
         entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Revenue')];
@@ -229,20 +225,34 @@ class ForecastMatrix extends React.Component {
       const costFromRosterEntry =
         entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Cost from Roster')];
 
-      const margin =
+      const plannedCostEntry =
+        entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Planned Cost')];
+
+      // calculate planned and actual margins
+      const plannedMargin =
+        +((revenueEntry && revenueEntry.amount) || 0) -
+        +((plannedCostEntry && plannedCostEntry.amount) || 0);
+
+      const actualMargin =
         +((revenueEntry && revenueEntry.amount) || 0) -
         +((costFromRosterEntry && costFromRosterEntry.amount) || 0);
 
-      entiresWithMargins[key] = {
+      entriesWithMargins[plannedMarginKey] = {
         financialYear: month.year,
         financialMonth: month.month,
-        amount: margin,
+        amount: plannedMargin,
+      };
+
+      entriesWithMargins[actualMarginKey] = {
+        financialYear: month.year,
+        financialMonth: month.month,
+        amount: actualMargin,
       };
     });
 
     return this.setState(state => ({
       ...state,
-      entries: entiresWithMargins,
+      entries: entriesWithMargins,
     }));
   };
 
@@ -258,7 +268,7 @@ class ForecastMatrix extends React.Component {
           $in: ['1', '2'],
         },
         project_id: project.id,
-        financialYear: financialYear.toString(),
+        // financialYear: financialYear.toString(),
       },
     });
 
@@ -271,19 +281,8 @@ class ForecastMatrix extends React.Component {
     this.setState({ saving: false });
   };
 
-  renderMargins = () => (
-    <RowSubTotal>
-      <RowLabel style={{ fontWeight: 'bold' }}>Margin</RowLabel>
-      {this.state.months.map(month => {
-        const key = getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Margin');
-        const entry = this.state.entries[key];
-        return <TotalCell>{entry && entry.amount}</TotalCell>;
-      })}
-    </RowSubTotal>
-  );
-
-  renderRow = (type, disabled) => (
-    <Row>
+  renderRow = (type, disabled, isMargin) => (
+    <Row isMargin={isMargin}>
       <RowLabel>
         <span>{type}</span>
       </RowLabel>
@@ -294,22 +293,21 @@ class ForecastMatrix extends React.Component {
   renderCell = (month, type, disabled = false) => {
     const key = getForecastEntryKey(month.calendarYear, month.calendarMonth, type);
     const entry = this.state.entries[key];
-    let value = entry && entry.amount;
-    if (+value === 0) value = ''; // Don't show 0 in the table
+    const value = entry && entry.amount;
 
     return (
       <Cell>
         <Input
           disabled={disabled}
           value={value}
-          onChange={event => this.handleCellChange(entry, event.target.value)}
+          onChange={event => this.handleCellChange(month, type, event.target.value)}
         />
       </Cell>
     );
   };
 
   render() {
-    const { loading, saving, project, months, costTypes, revenueTypes } = this.state;
+    const { loading, saving, project, months } = this.state;
 
     if (!project) {
       return (
@@ -350,10 +348,13 @@ class ForecastMatrix extends React.Component {
             // return null;
           })}
         </HeaderRow>
-        {costTypes.map(this.renderRow)}
+        {this.renderRow('Revenue')}
+        <Space />
+        {this.renderRow('Planned Cost')}
+        {this.renderRow('Planned Margin', true, true)}
+        <Space />
         {this.renderRow('Cost from Roster', true)}
-        {revenueTypes.map(this.renderRow)}
-        {this.renderMargins()}
+        {this.renderRow('Actual Margin', true, true)}
         <SaveButton onClick={this.save}>Save</SaveButton>
       </Container>
     );
@@ -368,13 +369,14 @@ const Row = styled.div`
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  border-top: 1px solid #eee;
+  border-bottom: 1px solid #eee;
   line-height: 30px;
+
+  ${props => props.isMargin && 'border-bottom: none; font-weight: bold;'};
 `;
 
-const RowSubTotal = styled(Row)`
-  border-top: 1px solid black;
-  border-bottom: 1px solid black;
+const Space = styled.div`
+  height: 30px;
 `;
 
 const HeaderRow = styled(Row)`
@@ -417,35 +419,9 @@ const Input = styled.input`
   }
 `;
 
-// const getZeroTotals = () => {
-//   const t = {
-//     cos: {},
-//     rev: {},
-//     oh: {},
-//     gp: {},
-//     np: {},
-//   };
-
-//   for (let month of months) {
-//     t.cos[month] = 0.0;
-//     t.rev[month] = 0.0;
-//     t.oh[month] = 0.0;
-//     t.gp[month] = 0.0;
-//     t.np[month] = 0.0;
-//   }
-
-//   return t;
-// };
-
 const Container = styled.div`
   ${props => (props.saving ? 'filter: blur(3px); opacity: 0.5;' : '')} margin-top: 50px;
   overflow-y: scroll;
-`;
-
-const TotalCell = styled.div`
-  text-align: center;
-  flex: 1;
-  font-weight: bold;
 `;
 
 const SaveButton = styled.div`

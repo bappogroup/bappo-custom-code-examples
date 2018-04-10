@@ -338,12 +338,13 @@ class ForecastMatrix extends React.Component {
     );
   };
 
-  calculateReportData = async (financialMonth, elementKey) => {
+  calculateReportData = async (financialMonth, elementKey, showTables) => {
     const { profitCentre, financialYear } = this.state;
     if (!(profitCentre && financialYear)) return;
 
     this.setState({
       reportParams: {
+        showTables,
         elementKey,
         financialYear,
         financialMonth,
@@ -394,7 +395,11 @@ class ForecastMatrix extends React.Component {
         <HeaderRow>
           <RowLabel />
           {this.monthArray.map(({ label, financialMonth }) => (
-            <ClickableCell onClick={() => this.calculateReportData(financialMonth)}>
+            <ClickableCell
+              onClick={() =>
+                this.calculateReportData(financialMonth, null, ['consultant', 'project'])
+              }
+            >
               {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
               <HeaderLabel>{label}</HeaderLabel>{' '}
             </ClickableCell>
