@@ -295,6 +295,7 @@ class ForecastMatrix extends React.Component {
     switch (element.key) {
       case 'SAL':
       case 'TMREV':
+      case 'FIXREV':
       case 'CWAGES':
       case 'INTCH':
       case 'INTREV':

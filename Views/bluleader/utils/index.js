@@ -447,9 +447,6 @@ export const getInternalRevenue = async ({
     let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
     if (!internalRate) {
       const consultant = consultants.find(c => c.id === ee.consultant_id);
-      if (!consultant) {
-        console.log(1.5, consultants, ee);
-      }
       ({ internalRate } = consultant);
     }
 
@@ -465,7 +462,7 @@ export const getInternalRevenue = async ({
 
 export const getInternalCharge = async ({
   $models,
-  consultants,
+  allConsultants,
   costCenters,
   startDate,
   endDate,
@@ -504,10 +501,7 @@ export const getInternalCharge = async ({
     }
     let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
     if (!internalRate) {
-      const consultant = consultants.find(c => c.id === ee.consultant_id);
-      if (!consultant) {
-        console.log(2.5, consultants, ee);
-      }
+      const consultant = allConsultants.find(c => c.id === ee.consultant_id);
       ({ internalRate } = consultant);
     }
 
@@ -524,6 +518,7 @@ export const getInternalCharge = async ({
 const calculateInternalRates = async ({
   $models,
   costCenters,
+  allConsultants,
   consultants,
   financialYear,
   forecastElements,
@@ -568,7 +563,7 @@ const calculateInternalRates = async ({
   // Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
   const internalCharges = await getInternalCharge({
     $models,
-    consultants,
+    allConsultants,
     projects,
     costCenters,
     startDate,
@@ -607,6 +602,93 @@ const calculateInternalRates = async ({
 };
 
 /**
+ * Get details of fixed price project revenue of a month
+ *
+ * @param {object} $models
+ * @param {string} financialYear
+ * @param {string} financialMonth
+ * @param {array of object} projects
+ * @return {object} project revenue, containing projectName - revenue pairs
+ */
+export const getFixPriceRevenues = async ({ $models, projects, financialYear, financialMonth }) => {
+  const projectRevenues = {};
+  const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
+    where: {
+      forecastType: '2',
+      financialYear,
+      financialMonth,
+      project_id: {
+        $in: projects.map(p => p.id),
+      },
+    },
+    include: [{ as: 'project' }],
+    limit: 1000,
+  });
+
+  projectForecastEntries.forEach(e => {
+    const { name } = e.project;
+    if (!projectRevenues[name]) projectRevenues[name] = 0;
+    projectRevenues[name] += +e.amount;
+  });
+
+  return projectRevenues;
+};
+
+/**
+ * Get fix price project revenues
+ *
+ * @param {object} $models
+ * @param {array of string} profitCentreIds
+ * @return {object} base data
+ */
+export const calculateFixPriceRevenues = async ({
+  $models,
+  profitCentre_id,
+  projects,
+  financialYear,
+  forecastElements,
+}) => {
+  const forecastEntries = {};
+  const fixPriceElementId = forecastElements.find(e => e.key === 'FIXREV').id;
+
+  const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
+    where: {
+      forecastType: '2',
+      financialYear,
+      project_id: {
+        $in: projects.map(p => p.id),
+      },
+    },
+    limit: 1000,
+  });
+
+  projectForecastEntries.forEach(e => {
+    const { financialMonth } = e;
+    const key = getForecastEntryKey(financialYear, financialMonth, fixPriceElementId, true);
+    if (!forecastEntries[key]) {
+      forecastEntries[key] = {
+        financialYear,
+        financialMonth,
+        forecastElement_id: fixPriceElementId,
+        profitCentre_id,
+        amount: 0,
+      };
+    }
+    forecastEntries[key].amount += +e.amount;
+  });
+
+  // Destroy previous and create new entries in db
+  await $models.ForecastEntry.destroy({
+    where: {
+      financialYear: financialYear.toString(),
+      forecastElement_id: fixPriceElementId,
+      profitCentre_id,
+    },
+  });
+  await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
+};
+
+/**
  * Get general data in preparation for calculations
  *
  * @param {object} $models
@@ -625,15 +707,22 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
   });
   const costCenterIds = costCenters.map(cc => cc.id);
 
-  const consultants = await $models.Consultant.findAll({
-    where: {
-      costCenter_id: {
-        $in: costCenterIds,
-      },
-    },
+  const allConsultants = await $models.Consultant.findAll({
     include: [{ as: 'costCenter' }],
     limit: 1000,
   });
+
+  const consultants = allConsultants.filter(c => costCenterIds.indexOf(c.costCenter_id) !== -1);
+
+  // const consultants = await $models.Consultant.findAll({
+  //   where: {
+  //     costCenter_id: {
+  //       $in: costCenterIds,
+  //     },
+  //   },
+  //   include: [{ as: 'costCenter' }],
+  //   limit: 1000,
+  // });
 
   const consultantIds = consultants.map(c => c.id);
 
@@ -673,7 +762,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
   const forecastElements = await $models.ForecastElement.findAll({
     where: {
       key: {
-        $in: ['TMREV', 'CWAGES', 'SAL', 'INTCH', 'INTREV'],
+        $in: ['TMREV', 'FIXREV', 'CWAGES', 'SAL', 'INTCH', 'INTREV'],
       },
     },
   });
@@ -681,6 +770,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
   // General data for calculations
   return {
     costCenters,
+    allConsultants,
     consultants,
     projects,
     forecastElements,
@@ -689,8 +779,9 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
 };
 
 /**
- * Calculate five forecast elements for a profit centre:
+ * Calculate following forecast elements for a profit centre:
  *  - 'Service Revenue'
+ *  - 'Fix Price Services'
  *  - 'Consultant Salaries'
  *  - 'Contractor Wages'
  *  - 'Internal Revenue'
@@ -701,6 +792,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
  * @param {string} profitCentre_id
  * @param {string} financialYear
  * @param {array of object} costCenters
+ * @param {array of object} allConsultants
  * @param {array of object} consultants
  * @param {array of object} forecastElements
  * @param {array of object} projects
@@ -712,6 +804,7 @@ export const calculateForecastForProfitCentre = params =>
     calculateServiceRevenueAndContractorWages(params),
     calculateConsultantSalaries(params),
     calculateInternalRates(params),
+    calculateFixPriceRevenues(params),
   ]);
 
 /**

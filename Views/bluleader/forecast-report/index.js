@@ -8,6 +8,7 @@ import {
   getConsultantSalariesByMonth,
   getInternalRevenue,
   getInternalCharge,
+  getFixPriceRevenues,
 } from 'utils';
 
 const getTableKey = (x, y) => `${x}.${y}`;
@@ -54,6 +55,7 @@ class ForecastReport extends React.Component {
       financialMonth,
       profitCentreIds,
       // from calculationBaseData:
+      allConsultants,
       costCenters,
       consultants,
       projects,
@@ -144,6 +146,19 @@ class ForecastReport extends React.Component {
             promises.push(promise);
             break;
           }
+          case 'FIXREV': {
+            // Fix price services
+            const promise = getFixPriceRevenues({
+              $models,
+              projects,
+              financialYear,
+              financialMonth,
+            }).then(revenues => {
+              console.log(revenues);
+            });
+            promises.push(promise);
+            break;
+          }
           case 'INTREV': {
             // Internal Revenue
             const promise = getInternalRevenue({
@@ -168,7 +183,7 @@ class ForecastReport extends React.Component {
             // const costCentersInPc = costCenters.filter(cc => cc.profitCentre_id === profitCentre_id)
             const promise = getInternalCharge({
               $models,
-              consultants,
+              allConsultants,
               costCenters,
               startDate,
               endDate,
@@ -233,7 +248,6 @@ class ForecastReport extends React.Component {
 
   render() {
     const { loading, consultants, externalConsultants, name, totals, elements } = this.state;
-    console.log(loading);
     // return 'Loading...';
     if (loading) return <ActivityIndicator />;
     if (!(name && elements && consultants && this.props.financialMonth && this.props.financialYear))
