@@ -1,29 +1,12 @@
 import React from 'react';
 import moment from 'moment';
-import {
-  ActivityIndicator,
-  FlatList,
-  View,
-  Text,
-  Button,
-  styled,
-} from 'bappo-components';
-import utils from 'utils';
+import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
+import { getMonday, daysDisplayed, datesToArray, datesToArrayByStart, datesEqual } from 'utils';
 import SingleRoster from './SingleRoster';
-
-const {
-  getMonday,
-  daysDisplayed,
-  datesToArray,
-  datesToArrayByStart,
-  datesEqual,
-} = utils;
 
 function truncString(str, max = 5, add = '...') {
   add = add || '...';
-  return typeof str === 'string' && str.length > max
-    ? str.substring(0, max) + add
-    : str;
+  return typeof str === 'string' && str.length > max ? str.substring(0, max) + add : str;
 }
 
 class Roster extends React.Component {
@@ -164,15 +147,13 @@ class Roster extends React.Component {
   };
 
   openEntryForm = async (entry, consultant) => {
-    const projectAssignments = await this.props.$models.ProjectAssignment.findAll(
-      {
-        where: {
-          consultant_id: consultant.id,
-        },
-        include: [{ as: 'project' }],
-        limit: 1000,
+    const projectAssignments = await this.props.$models.ProjectAssignment.findAll({
+      where: {
+        consultant_id: consultant.id,
       },
-    );
+      include: [{ as: 'project' }],
+      limit: 1000,
+    });
 
     const projectOptions = projectAssignments.map(pa => ({
       id: pa.project_id,
@@ -326,10 +307,7 @@ class Roster extends React.Component {
     if (projectName) projectName = truncString(projectName);
 
     return (
-      <Cell
-        onPress={() => this.openEntryForm(entry, consultant)}
-        backgroundColor={backgroundColor}
-      >
+      <Cell onPress={() => this.openEntryForm(entry, consultant)} backgroundColor={backgroundColor}>
         <CellText>{projectName}</CellText>
       </Cell>
     );
@@ -358,12 +336,8 @@ class Roster extends React.Component {
           {dates.map((date, dateIndex) => {
             let format = 'DD';
             let color = 'black';
-            if (date.weekday() === 6 || date.weekday() === 0)
-              color = 'lightgray';
-            if (
-              dateIndex === 0 ||
-              datesEqual(date, date.clone().startOf('month'))
-            ) {
+            if (date.weekday() === 6 || date.weekday() === 0) color = 'lightgray';
+            if (dateIndex === 0 || datesEqual(date, date.clone().startOf('month'))) {
               // Show month label
               format = 'MMM DD';
             }
@@ -388,16 +362,11 @@ class Roster extends React.Component {
     return (
       <Container>
         <HeaderContainer>
-          <Heading>
-            Cost center: {(costCenter && costCenter.name) || 'all'}
-          </Heading>
+          <Heading>Cost center: {(costCenter && costCenter.name) || 'all'}</Heading>
           <TextButton onPress={this.setFilters}>change</TextButton>
         </HeaderContainer>
         <ListContainer>
-          <ConsultantList
-            data={consultantsWithHeader}
-            renderItem={this.renderConsultantLabel}
-          />
+          <ConsultantList data={consultantsWithHeader} renderItem={this.renderConsultantLabel} />
           <EntryList
             data={consultantsWithHeader}
             renderItem={this.renderEntries}

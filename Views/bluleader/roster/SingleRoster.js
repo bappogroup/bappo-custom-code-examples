@@ -1,30 +1,13 @@
 import React from 'react';
 import moment from 'moment';
-import {
-  ActivityIndicator,
-  FlatList,
-  View,
-  Text,
-  Button,
-  styled,
-} from 'bappo-components';
-import utils from 'utils';
+import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
+import { getMonday, datesToArray } from 'utils';
 
 const weekdays = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const {
-  getMonday,
-  // daysDisplayed,
-  datesToArray,
-  // datesToArrayByStart,
-  // datesEqual,
-} = utils;
-
 function truncString(str, max = 18, add = '...') {
   add = add || '...';
-  return typeof str === 'string' && str.length > max
-    ? str.substring(0, max) + add
-    : str;
+  return typeof str === 'string' && str.length > max ? str.substring(0, max) + add : str;
 }
 
 class SingleRoster extends React.Component {
@@ -144,44 +127,89 @@ class SingleRoster extends React.Component {
           name: 'endDate',
           label: 'Until',
         },
+        {
+          name: 'mon',
+          type: 'Checkbox',
+          label: 'Monday',
+        },
+        {
+          name: 'tue',
+          type: 'Checkbox',
+          label: 'Tuesday',
+        },
+        {
+          name: 'wed',
+          type: 'Checkbox',
+          label: 'Wednesday',
+        },
+        {
+          name: 'thu',
+          type: 'Checkbox',
+          label: 'Thursday',
+        },
+        {
+          name: 'fri',
+          type: 'Checkbox',
+          label: 'Friday',
+        },
+        {
+          name: 'sat',
+          type: 'Checkbox',
+          label: 'Saturday',
+        },
+        {
+          name: 'sun',
+          type: 'Checkbox',
+          label: 'Sunday',
+        },
         'probability_id',
       ],
       title: `${entry.date}`,
-      initialValues: { ...entry, startDate: entry.date, endDate: entry.date },
+      initialValues: {
+        ...entry,
+        startDate: entry.date,
+        endDate: entry.date,
+        mon: true,
+        tue: true,
+        wed: true,
+        thu: true,
+        fri: true,
+        sat: false,
+        sun: false,
+      },
       onSubmit: this.updateRosterEntry,
     });
   };
 
   updateRosterEntry = async entry => {
-    const { RosterEntry, ProjectAssignment } = this.props.$models;
-    const { consultant } = this.state;
+    const { RosterEntry } = this.props.$models;
 
-    const pa = await ProjectAssignment.findAll({
-      where: {
-        consultant_id: entry.consultant_id,
-        project_id: entry.project_id,
-      },
-    });
+    // Generate new entries
+    const newEntries = [];
+    for (
+      let d = moment(entry.startDate).clone();
+      d.isSameOrBefore(moment(entry.endDate));
+      d.add(1, 'day')
+    ) {
+      const weekDayName = d.format('ddd').toLowerCase();
+      if (entry[weekDayName]) {
+        // Only pick chosen weekdays
+        newEntries.push({
+          date: d.format('YYYY-MM-DD'),
+          consultant_id: entry.consultant_id,
+          project_id: entry.project_id,
+          probability_id: entry.probability_id,
+        });
+      }
+    }
 
-    let revenue = pa && pa.length > 0 ? pa[0].dayRate : 0;
-    revenue = Math.floor(revenue);
+    if (newEntries.length === 0) return;
 
-    const newEntries = datesToArray(
-      moment(entry.startDate),
-      moment(entry.endDate),
-    ).map(d => ({
-      date: d.format('YYYY-MM-DD'),
-      consultant_id: consultant.id,
-      project_id: entry.project_id,
-      probability_id: entry.probability_id,
-      revenue,
-    }));
     await RosterEntry.destroy({
       where: {
         consultant_id: entry.consultant_id,
         date: {
-          $gte: entry.startDate,
-          $lte: entry.endDate,
+          $in: newEntries.map(e => e.date),
         },
       },
     });
@@ -229,10 +257,7 @@ class SingleRoster extends React.Component {
     if (projectName) projectName = truncString(projectName);
 
     return (
-      <Cell
-        onPress={() => this.openEntryForm(entry)}
-        backgroundColor={backgroundColor}
-      >
+      <Cell onPress={() => this.openEntryForm(entry)} backgroundColor={backgroundColor}>
         <CellText>{projectName}</CellText>
       </Cell>
     );
@@ -250,17 +275,9 @@ class SingleRoster extends React.Component {
         <CloseButton onPress={this.handleClose}>X</CloseButton>
         <Title>{consultant.name}'s Roster</Title>
         <HeaderRow>{weekdays.map(d => <HeaderCell>{d}</HeaderCell>)}</HeaderRow>
-        <LoadButton onPress={() => this.loadRosterEntries(-4)}>
-          Load previous
-        </LoadButton>
-        <FlatList
-          data={weeklyEntries}
-          renderItem={this.renderRow}
-          getKey={item => item[0].date}
-        />
-        <LoadButton onPress={() => this.loadRosterEntries(12)}>
-          Load more
-        </LoadButton>
+        <LoadButton onPress={() => this.loadRosterEntries(-4)}>Load previous</LoadButton>
+        <FlatList data={weeklyEntries} renderItem={this.renderRow} getKey={item => item[0].date} />
+        <LoadButton onPress={() => this.loadRosterEntries(12)}>Load more</LoadButton>
       </Container>
     );
   }

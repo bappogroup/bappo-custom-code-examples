@@ -214,6 +214,16 @@ class ForecastMatrix extends React.Component {
         month.calendarMonth,
         'Actual Margin',
       );
+      const costDiffKey = getForecastEntryKey(
+        month.calendarYear,
+        month.calendarMonth,
+        'Cost Difference',
+      );
+      const marginDiffKey = getForecastEntryKey(
+        month.calendarYear,
+        month.calendarMonth,
+        'Margin Difference',
+      );
 
       const revenueEntry =
         entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Revenue')];
@@ -225,24 +235,36 @@ class ForecastMatrix extends React.Component {
         entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Planned Cost')];
 
       // calculate planned and actual margins
-      const plannedMargin =
-        +((revenueEntry && revenueEntry.amount) || 0) -
-        +((plannedCostEntry && plannedCostEntry.amount) || 0);
+      const revenue = +(revenueEntry && revenueEntry.amount) || 0;
+      const plannedCost = +(plannedCostEntry && plannedCostEntry.amount) || 0;
+      const actualCost = +(costFromRosterEntry && costFromRosterEntry.amount) || 0;
 
-      const actualMargin =
-        +((revenueEntry && revenueEntry.amount) || 0) -
-        +((costFromRosterEntry && costFromRosterEntry.amount) || 0);
+      const plannedMargin = revenue - plannedCost;
+      const actualMargin = revenue - actualCost;
+      const costDifference = plannedCost - actualCost;
+      const marginDifference = plannedMargin - actualMargin;
+      // const costDifference;
+      // const marginDifference;
 
       entriesWithMargins[plannedMarginKey] = {
         financialYear: month.year,
         financialMonth: month.month,
         amount: plannedMargin,
       };
-
       entriesWithMargins[actualMarginKey] = {
         financialYear: month.year,
         financialMonth: month.month,
         amount: actualMargin,
+      };
+      entriesWithMargins[costDiffKey] = {
+        financialYear: month.year,
+        financialMonth: month.month,
+        amount: costDifference,
+      };
+      entriesWithMargins[marginDiffKey] = {
+        financialYear: month.year,
+        financialMonth: month.month,
+        amount: marginDifference,
       };
     });
 
@@ -349,6 +371,9 @@ class ForecastMatrix extends React.Component {
           <Space />
           {this.renderRow('Cost from Roster', true)}
           {this.renderRow('Actual Margin', true)}
+          <Space />
+          {this.renderRow('Cost Difference', true)}
+          {this.renderRow('Margin Difference', true)}
         </TableContainer>
 
         <SaveButton onClick={this.save}>Save</SaveButton>

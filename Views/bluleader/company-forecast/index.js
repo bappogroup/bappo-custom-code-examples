@@ -2,9 +2,26 @@
 // for each element, the displayed result are sum of each profit center. This sum is displayed only - not stored
 
 import React from 'react';
-import { styled } from 'bappo-components';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import ForecastReport from 'forecast-report';
+import {
+  Row,
+  HeaderRow,
+  RowLabel,
+  ClickableCell,
+  BoldCell,
+  Container,
+  TableContainer,
+  LabelColumnContainer,
+  DataRowsContainer,
+  HeaderLabel,
+  Space,
+  Loading,
+  HeaderContainer,
+  TextButton,
+  Heading,
+  YearLabel,
+} from 'forecast-components';
 import {
   calculateForecastForCompany,
   calculateBaseData,
@@ -220,12 +237,7 @@ class ForecastMatrix extends React.Component {
   };
 
   renderRow = element => (
-    <Row>
-      <RowLabel>
-        <span>{element.name}</span>
-      </RowLabel>
-      {this.monthArray.map(month => this.renderCell(month.financialMonth, element))}
-    </Row>
+    <Row>{this.monthArray.map(month => this.renderCell(month.financialMonth, element))}</Row>
   );
 
   renderCell = (financialMonth, element) => {
@@ -235,13 +247,13 @@ class ForecastMatrix extends React.Component {
     const amount = entry && entry.amount;
 
     return (
-      <Cell
+      <ClickableCell
         onClick={() => {
           if (amount) this.calculateReportData(financialMonth, element.key);
         }}
       >
         {amount}
-      </Cell>
+      </ClickableCell>
     );
   };
 
@@ -306,14 +318,35 @@ class ForecastMatrix extends React.Component {
     return tot;
   };
 
-  renderTotal = (month, key) => <TotalCell>{this.state.totals[key][month]}</TotalCell>;
+  renderTotal = (month, key) => <BoldCell>{this.state.totals[key][month]}</BoldCell>;
 
-  renderTotals = (key, label) => (
-    <Row>
-      <RowLabel style={{ fontWeight: 'bold' }}> {label} </RowLabel>
-      {this.monthArray.map(month => this.renderTotal(month.financialMonth, key))}
-    </Row>
+  renderTotals = key => (
+    <Row>{this.monthArray.map(month => this.renderTotal(month.financialMonth, key))}</Row>
   );
+
+  renderLabelColumn = () => {
+    const renderElementLabel = ({ name }) => <RowLabel>{name}</RowLabel>;
+    return (
+      <LabelColumnContainer>
+        <RowLabel />
+        {this.state.rev_elements.map(renderElementLabel)}
+        <RowLabel>Total Revenue</RowLabel>
+        <Space />
+        {this.state.cos_elements.map(renderElementLabel)}
+        <RowLabel>Total Cost of Sales</RowLabel>
+
+        <Space />
+        <RowLabel>Gross Profit</RowLabel>
+
+        <Space />
+        {this.state.oh_elements.map(renderElementLabel)}
+        <RowLabel>Total Overheads</RowLabel>
+
+        <Space />
+        <RowLabel>Net Profit</RowLabel>
+      </LabelColumnContainer>
+    );
+  };
 
   calculateReportData = async (financialMonth, elementKey, showTables) => {
     const { profitCentres, financialYear } = this.state;
@@ -357,43 +390,46 @@ class ForecastMatrix extends React.Component {
 
     return (
       <Container blur={blur}>
+        <HeaderContainer>
+          <Heading>
+            Company: {company.name}, financial year {financialYear}
+          </Heading>
+          <TextButton onClick={this.setFilters}>change</TextButton>
+          <TextButton onClick={this.calculate}>calculate</TextButton>
+        </HeaderContainer>
+
         <TableContainer>
-          <HeaderContainer>
-            <Heading>
-              Company: {company.name}, financial year {financialYear}
-            </Heading>
-            <TextButton onClick={this.setFilters}>change</TextButton>
-            <TextButton onClick={this.calculate}>calculate</TextButton>
-          </HeaderContainer>
-          <HeaderRow>
-            <RowLabel />
-            {this.monthArray.map(({ label, financialMonth }) => (
-              <Cell
-                style={{ border: 'none' }}
-                onClick={() =>
-                  this.calculateReportData(financialMonth, null, ['consultant', 'project'])
-                }
-              >
-                {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
-                <HeaderLabel>{label}</HeaderLabel>{' '}
-              </Cell>
-            ))}
-          </HeaderRow>
-          {this.state.rev_elements.map(this.renderRow)}
-          {this.renderTotals('rev', 'Total Revenue')}
-          <Space />
-          {this.state.cos_elements.map(this.renderRow)}
-          {this.renderTotals('cos', 'Total Cost of Sales')}
+          {this.renderLabelColumn()}
+          <DataRowsContainer>
+            <HeaderRow>
+              {this.monthArray.map(({ label, financialMonth }) => (
+                <ClickableCell
+                  style={{ border: 'none' }}
+                  onClick={() =>
+                    this.calculateReportData(financialMonth, null, ['consultant', 'project'])
+                  }
+                >
+                  {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
+                  <HeaderLabel>{label}</HeaderLabel>{' '}
+                </ClickableCell>
+              ))}
+            </HeaderRow>
+            {this.state.rev_elements.map(this.renderRow)}
+            {this.renderTotals('rev')}
+            <Space />
+            {this.state.cos_elements.map(this.renderRow)}
+            {this.renderTotals('cos')}
 
-          <Space />
-          {this.renderTotals('gp', 'Gross Profit')}
+            <Space />
+            {this.renderTotals('gp')}
 
-          <Space />
-          {this.state.oh_elements.map(this.renderRow)}
-          {this.renderTotals('oh', 'Total Overheads')}
+            <Space />
+            {this.state.oh_elements.map(this.renderRow)}
+            {this.renderTotals('oh')}
 
-          <Space />
-          {this.renderTotals('np', 'Net Profit')}
+            <Space />
+            {this.renderTotals('np')}
+          </DataRowsContainer>
         </TableContainer>
 
         <ForecastReport
@@ -408,101 +444,3 @@ class ForecastMatrix extends React.Component {
 }
 
 export default ForecastMatrix;
-
-const Container = styled.div`
-  margin-top: 50px;
-  overflow-y: scroll;
-  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
-`;
-
-const TableContainer = styled.div`
-  overflow-x: scroll;
-`;
-
-const Row = styled.div`
-  padding-right: 30px;
-  padding-left: 30px;
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  line-height: 30px;
-`;
-
-const HeaderRow = styled(Row)`
-  border: none;
-  color: gray;
-  font-weight: bold;
-`;
-
-const RowLabel = styled.div`
-  flex: none;
-  width: 240px;
-`;
-
-const Cell = styled.div`
-  position: relative;
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  min-width: 150px;
-  border-top: 1px solid #eee;
-
-  &: hover {
-    cursor: pointer;
-    opacity: 0.7;
-  }
-`;
-
-const TotalCell = styled.div`
-  text-align: center;
-  flex: 1;
-  font-weight: bold;
-  min-width: 150px;
-  border-top: 1px solid black;
-  border-bottom: 1px solid black;
-`;
-
-const HeaderLabel = styled.div`
-  text-align: center;
-  flex: 1;
-`;
-
-const Space = styled.div`
-  height: 50px;
-`;
-
-const Loading = styled.div`
-  color: #ddd;
-  margin-top: 50px;
-  display: flex;
-  justify-content: center;
-`;
-
-const HeaderContainer = styled.div`
-  margin: 30px;
-  margin-top: 0;
-  display: flex;
-`;
-
-const TextButton = styled.span`
-  font-size: 13px;
-  color: grey;
-  margin-left: 20px;
-  margin-top: 3px;
-
-  &:hover {
-    cursor: pointer;
-    opacity: 0.7;
-  }
-`;
-
-const Heading = styled.div`
-  font-size: 18px;
-`;
-
-const YearLabel = styled.div`
-  position: absolute;
-  bottom: 20px;
-  font-weight: lighter;
-  font-size: 12px;
-`;
