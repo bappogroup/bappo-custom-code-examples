@@ -30,27 +30,22 @@ import {
   generateMonthArray,
 } from 'utils';
 
-const newEntry = (financialYear, month, element, amount) => ({
-  newRecord: true,
-  financialYear,
-  financialMonth: month,
-  forecastElement_id: element.id,
-  forecastElement: element,
-  amount: amount || '',
-});
-
 class ForecastMatrix extends React.Component {
   monthArray = [];
 
   state = {
     loading: true,
-    company: null,
     financialYear: null,
     entries: {},
-    profitCentres: [],
     blur: false,
     reportParams: null,
     calculationBaseData: null,
+    cos_elements: [],
+    rev_elements: [],
+    oh_elements: [],
+    //
+    company: null,
+    profitCentres: [],
   };
 
   async componentDidMount() {
@@ -67,7 +62,7 @@ class ForecastMatrix extends React.Component {
         company,
         financialYear,
       });
-      await this.calculate();
+      await this.loadData();
     }
   }
 
@@ -116,7 +111,7 @@ class ForecastMatrix extends React.Component {
           company: selectedCompany,
           financialYear: selectedFinancialYear,
         });
-        await this.calculate();
+        await this.loadData();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           company_id: companyId,
           financialYear: selectedFinancialYear,
@@ -142,7 +137,7 @@ class ForecastMatrix extends React.Component {
 
     const profitCentreIds = profitCentres.map(pc => pc.id);
 
-    const entries_array = await ForecastEntry.findAll({
+    const entriesArray = await ForecastEntry.findAll({
       include: [{ as: 'profitCentre' }, { as: 'costCentre' }, { as: 'forecastElement' }],
       limit: 100000,
       where: {
@@ -160,7 +155,7 @@ class ForecastMatrix extends React.Component {
     const oh_elements = [];
 
     const entries = {};
-    for (const entry of entries_array) {
+    for (const entry of entriesArray) {
       const key = getForecastEntryKey(
         entry.financialYear,
         entry.financialMonth,
@@ -196,19 +191,12 @@ class ForecastMatrix extends React.Component {
           break;
         default:
       }
-
-      // Create new entries for empty cells
-      this.monthArray.forEach(month => {
-        const key = getForecastEntryKey(financialYear, month.financialMonth, element.id, true);
-        entries[key] = entries[key] || newEntry(financialYear, month.financialMonth, element);
-      });
     }
 
     await this.setState({
       loading: false,
       entries,
       profitCentres,
-      // elements,
       cos_elements,
       rev_elements,
       oh_elements,

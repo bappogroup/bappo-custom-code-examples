@@ -30,21 +30,12 @@ import {
   generateMonthArray,
 } from 'utils';
 
-const newEntry = (financialYear, financialMonth, element, amount) => ({
-  financialYear,
-  financialMonth,
-  forecastElement_id: element.id,
-  forecastElement: element,
-  amount: amount || '',
-});
-
 class ForecastMatrix extends React.Component {
   monthArray = [];
 
   state = {
     loading: true,
     financialYear: null,
-    profitCentre: null,
     entries: {},
     blur: false,
     reportParams: null,
@@ -52,6 +43,8 @@ class ForecastMatrix extends React.Component {
     cos_elements: [],
     rev_elements: [],
     oh_elements: [],
+    //
+    profitCentre: null,
   };
 
   async componentDidMount() {
@@ -68,7 +61,7 @@ class ForecastMatrix extends React.Component {
         profitCentre,
         financialYear,
       });
-      await this.calculate();
+      await this.loadData();
     }
   }
 
@@ -110,13 +103,14 @@ class ForecastMatrix extends React.Component {
       },
       onSubmit: async ({ profitCentreId, financialYear }) => {
         const profitCentre = profitCentres.find(pc => pc.id === profitCentreId);
+
         await this.setState({
           calculationBaseData: null,
           reportParams: null,
           profitCentre,
           financialYear,
         });
-        await this.calculate();
+        await this.loadData();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           profitcentre_id: profitCentreId,
           financialYear,
@@ -128,6 +122,8 @@ class ForecastMatrix extends React.Component {
   loadData = async () => {
     const { financialYear, profitCentre } = this.state;
     if (!(financialYear && profitCentre)) return;
+
+    this.setState({ loading: true });
 
     const { ForecastEntry, ForecastElement } = this.props.$models;
 
@@ -155,7 +151,19 @@ class ForecastMatrix extends React.Component {
         entry.forecastElement_id,
         true,
       );
-      entries[key] = entry;
+
+      if (!entries[key]) {
+        entries[key] = {
+          amount: +entry.amount,
+          financialMonth: entry.financialMonth,
+          financialYear: entry.financialYear,
+          forecastElement: entry.forecastElement,
+          forecastElement_id: entry.forecastElement_id,
+          id: entry.id,
+        };
+      } else {
+        entries[key].amount += +entry.amount;
+      }
     }
 
     for (const element of elements) {
@@ -171,12 +179,6 @@ class ForecastMatrix extends React.Component {
           break;
         default:
       }
-
-      // Create new entries for empty cells
-      this.monthArray.forEach(month => {
-        const key = getForecastEntryKey(financialYear, month.financialMonth, element.id, true);
-        entries[key] = entries[key] || newEntry(financialYear, month.financialMonth, element);
-      });
     }
 
     await this.setState({
@@ -189,21 +191,27 @@ class ForecastMatrix extends React.Component {
     });
   };
 
-  handleCellChange = (entry, amt) => {
-    const key = getForecastEntryKey(
-      entry.financialYear,
-      entry.financialMonth,
-      entry.forecastElement_id,
-      true,
-    );
-    const revisedEntry = {};
-    const sign = amt.includes('-') ? '-' : '';
-    const amount = sign + amt.replace(/[^0-9.]+/g, '').replace(/^0+/g, '');
-    revisedEntry[key] = { ...this.state.entries[key], amount, changed: true };
-    const entries = { ...this.state.entries, ...revisedEntry };
-    this.setState({
-      entries,
-      totals: this.calcTotals(entries),
+  handleCellChange = (financialMonth, forecastElement, amount) => {
+    const { financialYear } = this.state;
+    const key = getForecastEntryKey(financialYear, financialMonth, forecastElement.id, true);
+
+    this.setState(({ entries, ...others }) => {
+      const updatedEntries = { ...entries };
+      if (!updatedEntries[key]) {
+        updatedEntries[key] = {
+          amount: 0,
+          financialMonth,
+          financialYear,
+          forecastElement,
+          forecastElement_id: forecastElement.id,
+        };
+      }
+      updatedEntries[key].amount = +amount;
+      return {
+        ...others,
+        entries: updatedEntries,
+        totals: this.calcTotals(updatedEntries),
+      };
     });
   };
 
@@ -252,7 +260,7 @@ class ForecastMatrix extends React.Component {
     await this.loadData();
 
     await this.setState(state => ({
-      calculationBaseData,
+      calculationBaseData, // Cache base data for future calculations
       totals: this.calcTotals(state.entries),
       blur: false,
     }));
@@ -263,7 +271,7 @@ class ForecastMatrix extends React.Component {
 
     for (const key of Object.keys(entries)) {
       const entry = entries[key];
-      if (entry.forecastElement) {
+      if (entry && entry.forecastElement) {
         const amt = Number(entry.amount);
         if (amt !== 0) {
           switch (entry.forecastElement.elementType) {
@@ -350,7 +358,10 @@ class ForecastMatrix extends React.Component {
 
     return (
       <Cell>
-        <Input value={value} onChange={event => this.handleCellChange(entry, event.target.value)} />
+        <Input
+          value={value}
+          onChange={event => this.handleCellChange(financialMonth, element, event.target.value)}
+        />
       </Cell>
     );
   };
