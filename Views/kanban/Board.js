@@ -8,6 +8,7 @@ class Board extends React.Component {
     issuesById: {},
     issuesByStatus: {},
     selectedIssueId: null,
+    searchValue: '',
   };
 
   componentDidMount() {
@@ -16,12 +17,12 @@ class Board extends React.Component {
 
   fetchIssues = async () => {
     const { $models, $navigation } = this.props;
-    const projectId =
-      $navigation.state.params && $navigation.state.params.recordId;
+    const projectId = $navigation.state.params && $navigation.state.params.recordId;
     const where = projectId ? { project_id: projectId } : {};
     const issues = await $models.Issue.findAll({
       include: [{ as: 'assignedTo' }],
       where,
+      limit: 10000,
     });
     const issuesById = {};
     const issuesByStatus = {};
@@ -61,9 +62,15 @@ class Board extends React.Component {
   };
 
   openNewIssueForm = () => {
-    const { $popup } = this.props;
+    const { $global, $navigation, $popup } = this.props;
+    const currentUserId = $global.currentUser && $global.currentUser.id;
+    const projectId = $navigation.state.params && $navigation.state.params.recordId;
     $popup.form({
       formKey: 'IssueForm',
+      initialValues: {
+        project_id: projectId,
+        requestedBy_id: currentUserId,
+      },
       onSubmit: this.createIssue,
     });
   };
@@ -88,12 +95,8 @@ class Board extends React.Component {
 
   openWorkflowPopup = () => {
     const { $models, $popup } = this.props;
-    const statusField = $models.Issue.fields.find(
-      field => field.name === 'status',
-    );
-    const statusNames = statusField.properties.options.map(
-      ({ label }) => label,
-    );
+    const statusField = $models.Issue.fields.find(field => field.name === 'status');
+    const statusNames = statusField.properties.options.map(({ label }) => label);
     const selectedIssue = this.state.issuesById[this.state.selectedIssueId];
     $popup.open(
       <PopupContainer>
@@ -139,6 +142,8 @@ class Board extends React.Component {
           openEditIssueForm={this.openEditIssueForm}
           openIssueDetailsPage={this.openIssueDetailsPage}
           openWorkflowPopup={this.openWorkflowPopup}
+          searchValue={this.state.searchValue}
+          changeSearchValue={searchValue => this.setState({ searchValue })}
         />
         <Grid>
           {statusField.properties.options.map(({ id, label }) => (
@@ -148,6 +153,7 @@ class Board extends React.Component {
               onCardSelect={this.selectIssue}
               selectedIssueId={this.state.selectedIssueId}
               statusName={label}
+              searchValue={this.state.searchValue}
             />
           ))}
         </Grid>

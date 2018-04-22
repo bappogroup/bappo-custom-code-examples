@@ -1,5 +1,5 @@
 import React from 'react';
-import { styled, Button, Text, View } from 'bappo-components';
+import { styled, Button, Text, View, TextInput } from 'bappo-components';
 
 const MenuBar = ({
   detailsDisabled,
@@ -8,6 +8,8 @@ const MenuBar = ({
   openEditIssueForm,
   openIssueDetailsPage,
   openWorkflowPopup,
+  changeSearchValue,
+  searchValue,
 }) => {
   return (
     <Container>
@@ -31,6 +33,7 @@ const MenuBar = ({
           <MenuButtonText>Workflow</MenuButtonText>
         </MenuButton>
       </MenuButtonContainer>
+      <SearchInput placeholder="search" value={searchValue} onValueChange={changeSearchValue} />
     </Container>
   );
 };
@@ -63,4 +66,16 @@ const MenuButton = styled(Button)`
 
 const MenuButtonText = styled(Text)`
   font-size: 13.5px;
+`;
+
+const SearchInput = styled(TextInput)`
+  background-color: #425f75;
+  margin-left: 50px;
+  border-radius: 15px;
+  border: 2px solid gray;
+  padding-left: 20px;
+  height: 30px;
+  font-family: arial;
+  color: #bbb;
+  placeholder: search;
 `;

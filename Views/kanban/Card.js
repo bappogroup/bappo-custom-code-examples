@@ -12,9 +12,7 @@ class Card extends React.PureComponent {
           <IssueNumberText>{issue.referenceNumber}</IssueNumberText>
           <TitleText>{issue.name}</TitleText>
         </Header>
-        <Footer>
-          {issue.assignedTo && <Avatar user={issue.assignedTo} />}
-        </Footer>
+        <Footer>{issue.assignedTo && <Avatar user={issue.assignedTo} />}</Footer>
       </Container>
     );
   }

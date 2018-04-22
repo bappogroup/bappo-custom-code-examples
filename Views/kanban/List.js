@@ -4,21 +4,26 @@ import Card from './Card';
 
 const keyExtractor = issue => issue.id;
 
-const List = ({ issues, onCardSelect, selectedIssueId, statusName }) => {
+const List = ({ issues, onCardSelect, selectedIssueId, statusName, searchValue }) => {
   const renderCard = ({ item }) => (
-    <Card
-      issue={item}
-      onPress={() => onCardSelect(item)}
-      selected={selectedIssueId === item.id}
-    />
+    <Card issue={item} onPress={() => onCardSelect(item)} selected={selectedIssueId === item.id} />
   );
+
+  const filteredIssues = issues.filter(issue => {
+    // const text = `${issue.name} ${issue.description} ${issue.assignedTo.name} ${issue.developer.name} ` +
+    //              `${issue.requestedBy.name}`;
+    const searchString = searchValue.toLowerCase().trim();
+    const text = `${issue.name} ${issue.description} ${issue.assignedTo && issue.assignedTo.name}`;
+    return text.toLowerCase().search(searchString) > -1;
+  });
+
   return (
     <Container>
       <ListTitleContainer>
         <Text>{statusName}</Text>
       </ListTitleContainer>
       <StyledFlatList
-        data={issues}
+        data={filteredIssues}
         extraData={selectedIssueId}
         keyExtractor={keyExtractor}
         renderItem={renderCard}
