@@ -1,56 +1,16 @@
-// Calculate forecast for all profit centers of a company
-// for each element, the displayed result are sum of each profit center. This sum is displayed only - not stored
-
 import React from 'react';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
-import ForecastReport from 'forecast-report';
-import {
-  Row,
-  HeaderRow,
-  RowLabel,
-  ClickableCell,
-  BoldCell,
-  Container,
-  TableContainer,
-  LabelColumnContainer,
-  DataRowsContainer,
-  HeaderLabel,
-  Space,
-  Loading,
-  HeaderContainer,
-  TextButton,
-  Heading,
-  YearLabel,
-} from 'forecast-components';
-import {
-  calculateForecastForCompany,
-  calculateBaseData,
-  getForecastEntryKey,
-  getFinancialTimeFromDate,
-  generateMonthArray,
-} from 'utils';
+import { getFinancialTimeFromDate } from 'utils';
+import Forecast from 'forecast';
 
-class ForecastMatrix extends React.Component {
-  monthArray = [];
-
+class CompanyForecast extends React.Component {
   state = {
-    loading: true,
-    financialYear: null,
-    entries: {},
-    blur: false,
-    reportParams: null,
-    calculationBaseData: null,
-    cos_elements: [],
-    rev_elements: [],
-    oh_elements: [],
-    //
     company: null,
-    profitCentres: [],
+    profitCentres: null,
+    financialYear: null,
   };
 
   async componentDidMount() {
-    this.monthArray = generateMonthArray();
-
     // Load user preferences
     const prefs = await getUserPreferences(this.props.$global.currentUser.id, this.props.$models);
     const { company_id, financialYear } = prefs;
@@ -58,15 +18,21 @@ class ForecastMatrix extends React.Component {
     if (!(company_id && financialYear)) await this.setFilters();
     else {
       const company = await this.props.$models.Company.findById(company_id);
+      const profitCentres = await this.props.$models.ProfitCentre.findAll({
+        where: {
+          company_id: company.id,
+        },
+        limit: 1000,
+      });
       await this.setState({
         company,
+        profitCentres,
         financialYear,
       });
       await this.loadData();
     }
   }
 
-  // Bring up a popup asking which company and financial year
   setFilters = async () => {
     const { $models, $popup } = this.props;
     const { company, financialYear } = this.state;
@@ -104,11 +70,16 @@ class ForecastMatrix extends React.Component {
       },
       onSubmit: async ({ companyId, financialYear: selectedFinancialYear }) => {
         const selectedCompany = companies.find(com => com.id === companyId);
+        const profitCentres = await this.props.$models.ProfitCentre.findAll({
+          where: {
+            company_id: companyId,
+          },
+          limit: 1000,
+        });
 
         await this.setState({
-          calculationBaseData: null,
-          reportParams: null,
           company: selectedCompany,
+          profitCentres,
           financialYear: selectedFinancialYear,
         });
         await this.loadData();
@@ -120,315 +91,22 @@ class ForecastMatrix extends React.Component {
     });
   };
 
-  loadData = async () => {
-    const { financialYear, company } = this.state;
-    if (!(financialYear && company)) return;
-
-    this.setState({ loading: true });
-
-    const { ProfitCentre, ForecastEntry, ForecastElement } = this.props.$models;
-
-    // Find all profit centres
-    const profitCentres = await ProfitCentre.findAll({
-      where: {
-        company_id: company.id,
-      },
-    });
-
-    const profitCentreIds = profitCentres.map(pc => pc.id);
-
-    const entriesArray = await ForecastEntry.findAll({
-      include: [{ as: 'profitCentre' }, { as: 'costCentre' }, { as: 'forecastElement' }],
-      limit: 100000,
-      where: {
-        active: true,
-        financialYear,
-        profitCentre_id: {
-          $in: profitCentreIds,
-        },
-      },
-    });
-
-    const elements = await ForecastElement.findAll({});
-    const cos_elements = [];
-    const rev_elements = [];
-    const oh_elements = [];
-
-    const entries = {};
-    for (const entry of entriesArray) {
-      const key = getForecastEntryKey(
-        entry.financialYear,
-        entry.financialMonth,
-        entry.forecastElement_id,
-        true,
-      );
-
-      if (!entries[key]) {
-        entries[key] = {
-          amount: +entry.amount,
-          financialMonth: entry.financialMonth,
-          financialYear: entry.financialYear,
-          forecastElement: entry.forecastElement,
-          forecastElement_id: entry.forecastElement_id,
-          id: entry.id,
-          name: entry.name,
-        };
-      } else {
-        entries[key].amount += +entry.amount;
-      }
-    }
-
-    for (const element of elements) {
-      switch (element.elementType) {
-        case '1':
-          cos_elements.push(element);
-          break;
-        case '2':
-          rev_elements.push(element);
-          break;
-        case '3':
-          oh_elements.push(element);
-          break;
-        default:
-      }
-    }
-
-    await this.setState({
-      loading: false,
-      entries,
-      profitCentres,
-      cos_elements,
-      rev_elements,
-      oh_elements,
-      totals: this.calcTotals(entries),
-    });
-  };
-
-  getZeroTotals = () => {
-    const t = {
-      cos: {},
-      rev: {},
-      oh: {},
-      gp: {},
-      np: {},
-    };
-
-    this.monthArray.forEach(({ financialMonth }) => {
-      t.cos[financialMonth] = 0.0;
-      t.rev[financialMonth] = 0.0;
-      t.oh[financialMonth] = 0.0;
-      t.gp[financialMonth] = 0.0;
-      t.np[financialMonth] = 0.0;
-    });
-
-    return t;
-  };
-
-  renderRow = element => (
-    <Row>{this.monthArray.map(month => this.renderCell(month.financialMonth, element))}</Row>
-  );
-
-  renderCell = (financialMonth, element) => {
-    const key = getForecastEntryKey(this.state.financialYear, financialMonth, element.id, true);
-    const entry = this.state.entries[key];
-
-    const amount = entry && entry.amount;
-
-    return (
-      <ClickableCell
-        onClick={() => {
-          if (amount) this.calculateReportData(financialMonth, element.key);
-        }}
-      >
-        {amount}
-      </ClickableCell>
-    );
-  };
-
-  // Calculate all rows that need to, update db, reload data and calculate total
-  calculate = async () => {
-    this.setState({ blur: true, reportParams: {} });
-
-    const { profitCentres, financialYear } = this.state;
-    const profitCentreIds = profitCentres.map(pc => pc.id);
-
-    // Get general data in preparation for calculations
-    const calculationBaseData = await calculateBaseData({
-      $models: this.props.$models,
-      profitCentreIds,
-    });
-
-    await calculateForecastForCompany({
-      ...calculationBaseData,
-      $models: this.props.$models,
-      financialYear,
-      profitCentreIds,
-    });
-
-    await this.loadData();
-
-    await this.setState(state => ({
-      calculationBaseData,
-      totals: this.calcTotals(state.entries),
-      blur: false,
-    }));
-  };
-
-  calcTotals = entries => {
-    const tot = this.getZeroTotals();
-
-    for (const key of Object.keys(entries)) {
-      const entry = entries[key];
-      if (entry.forecastElement) {
-        const amt = Number(entry.amount);
-        if (amt !== 0) {
-          switch (entry.forecastElement.elementType) {
-            case '1':
-              tot.cos[entry.financialMonth] += amt;
-              tot.gp[entry.financialMonth] += -amt;
-              tot.np[entry.financialMonth] += -amt;
-              break;
-            case '2':
-              tot.rev[entry.financialMonth] += amt;
-              tot.gp[entry.financialMonth] += amt;
-              tot.np[entry.financialMonth] += amt;
-              break;
-            case '3':
-              tot.oh[entry.financialMonth] += amt;
-              tot.np[entry.financialMonth] += -amt;
-              break;
-            default:
-            // do nothing
-          }
-        }
-      }
-    }
-    return tot;
-  };
-
-  renderTotal = (month, key) => <BoldCell>{this.state.totals[key][month]}</BoldCell>;
-
-  renderTotals = key => (
-    <Row>{this.monthArray.map(month => this.renderTotal(month.financialMonth, key))}</Row>
-  );
-
-  renderLabelColumn = () => {
-    const renderElementLabel = ({ name }) => <RowLabel>{name}</RowLabel>;
-    return (
-      <LabelColumnContainer>
-        <RowLabel />
-        {this.state.rev_elements.map(renderElementLabel)}
-        <RowLabel>Total Revenue</RowLabel>
-        <Space />
-        {this.state.cos_elements.map(renderElementLabel)}
-        <RowLabel>Total Cost of Sales</RowLabel>
-
-        <Space />
-        <RowLabel>Gross Profit</RowLabel>
-
-        <Space />
-        {this.state.oh_elements.map(renderElementLabel)}
-        <RowLabel>Total Overheads</RowLabel>
-
-        <Space />
-        <RowLabel>Net Profit</RowLabel>
-      </LabelColumnContainer>
-    );
-  };
-
-  calculateReportData = async (financialMonth, elementKey, showTables) => {
-    const { profitCentres, financialYear } = this.state;
-    if (!profitCentres.length) return;
-
-    this.setState({
-      reportParams: {
-        showTables,
-        elementKey,
-        financialYear,
-        financialMonth,
-      },
-    });
-  };
-
   render() {
-    const {
-      loading,
-      blur,
-      company,
-      financialYear,
-      reportParams,
-      calculationBaseData,
-      profitCentres,
-    } = this.state;
+    const { company, profitCentres, financialYear } = this.state;
+    if (!(company && financialYear)) return null;
 
-    if (loading) {
-      return <Loading>Loading...</Loading>;
-    }
-
-    if (!(company && financialYear && profitCentres)) {
-      return (
-        <Loading>
-          Please specify a company and financial year to continue.
-          <TextButton onClick={this.setFilters}>change</TextButton>
-        </Loading>
-      );
-    }
-
-    const profitCentreIds = profitCentres.map(pc => pc.id);
+    const title = `Company: ${company.name}`;
 
     return (
-      <Container blur={blur}>
-        <HeaderContainer>
-          <Heading>
-            Company: {company.name}, financial year {financialYear}
-          </Heading>
-          <TextButton onClick={this.setFilters}>change</TextButton>
-          <TextButton onClick={this.calculate}>calculate</TextButton>
-        </HeaderContainer>
-
-        <TableContainer>
-          {this.renderLabelColumn()}
-          <DataRowsContainer>
-            <HeaderRow>
-              {this.monthArray.map(({ label, financialMonth }) => (
-                <ClickableCell
-                  style={{ border: 'none' }}
-                  onClick={() =>
-                    this.calculateReportData(financialMonth, null, ['consultant', 'project'])
-                  }
-                >
-                  {label === 'Jan' && <YearLabel>{+financialYear + 1}</YearLabel>}
-                  <HeaderLabel>{label}</HeaderLabel>{' '}
-                </ClickableCell>
-              ))}
-            </HeaderRow>
-            {this.state.rev_elements.map(this.renderRow)}
-            {this.renderTotals('rev')}
-            <Space />
-            {this.state.cos_elements.map(this.renderRow)}
-            {this.renderTotals('cos')}
-
-            <Space />
-            {this.renderTotals('gp')}
-
-            <Space />
-            {this.state.oh_elements.map(this.renderRow)}
-            {this.renderTotals('oh')}
-
-            <Space />
-            {this.renderTotals('np')}
-          </DataRowsContainer>
-        </TableContainer>
-
-        <ForecastReport
-          $models={this.props.$models}
-          profitCentreIds={profitCentreIds}
-          {...reportParams}
-          {...calculationBaseData}
-        />
-      </Container>
+      <Forecast
+        mode="company"
+        title={title}
+        financialYear={financialYear}
+        profitCentreIds={profitCentres.map(pc => pc.id)}
+        $models={this.props.$models}
+      />
     );
   }
 }
 
-export default ForecastMatrix;
+export default CompanyForecast;

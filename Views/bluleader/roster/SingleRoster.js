@@ -196,7 +196,7 @@ class SingleRoster extends React.Component {
         // Only pick chosen weekdays
         newEntries.push({
           date: d.format('YYYY-MM-DD'),
-          consultant_id: entry.consultant_id,
+          consultant_id: this.props.consultant_id,
           project_id: entry.project_id,
           probability_id: entry.probability_id,
         });
@@ -207,7 +207,7 @@ class SingleRoster extends React.Component {
 
     await RosterEntry.destroy({
       where: {
-        consultant_id: entry.consultant_id,
+        consultant_id: this.props.consultant_id,
         date: {
           $in: newEntries.map(e => e.date),
         },
