@@ -49,6 +49,59 @@ class Dummy extends React.Component {
     }
   };
 
+  generateConsultants = async () => {
+    const { Consultant, CostCenter } = this.props.$models;
+    // const cs = await Consultant.findAll({ limit: 1, where: { id: 308} });
+    // const costCenters = await CostCenter.findAll({});
+
+    await Consultant.destroy({ where: {} });
+
+    const count = 100;
+
+    const consultant = {
+      active: true,
+      annualSalary: '120000.00',
+      consultantType: '2',
+      costCenter_id: '6',
+      internalRate: '600.00',
+      name: 'Consultant',
+      startDate: '2018-01-01',
+    };
+
+    let n;
+    const a = [];
+    for (n = 1; n < count; n++) {
+      a.push({ ...consultant, name: `Consultant ${n}` });
+    }
+
+    try {
+      await Consultant.bulkCreate(a);
+    } catch (e) {
+      console.log(e);
+    }
+
+    this.generateProjectAssigments();
+    alert('done');
+  };
+
+  generateProjectAssigments = async () => {
+    const { Consultant, ProjectAssignment } = this.props.$models;
+    const consultants = await Consultant.findAll({ limit: 1000 });
+    await ProjectAssignment.destroy({ where: {} });
+
+    const a = [];
+    for (let c of consultants) {
+      a.push({ consultant_id: c.id, project_id: '11', dayRate: '1300' });
+    }
+
+    try {
+      await ProjectAssignment.bulkCreate(a);
+      alert('done');
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   render() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -58,6 +111,7 @@ class Dummy extends React.Component {
         </button>
         <button onClick={this.deleteAllRosterEntries}>Delete all Roster Entry Records</button>
         <button onClick={this.deleteAllUserPreferences}>Delete all User Preferences</button>
+        <button onClick={this.generateConsultants}>Generate Consultants</button>
       </div>
     );
   }

@@ -114,7 +114,7 @@ class ForecastMatrix extends React.Component {
     // Get months for this project
     const startDate = moment(project.startDate);
     const endDate = moment(project.endDate);
-    const { financialYear } = getFinancialTimeFromDate(startDate);
+    // const { financialYear } = getFinancialTimeFromDate(startDate);
 
     while (endDate > startDate || startDate.format('M') === endDate.format('M')) {
       months.push({
@@ -241,10 +241,8 @@ class ForecastMatrix extends React.Component {
 
       const plannedMargin = revenue - plannedCost;
       const actualMargin = revenue - actualCost;
-      const costDifference = plannedCost - actualCost;
+      const costDifference = actualCost - plannedCost;
       const marginDifference = plannedMargin - actualMargin;
-      // const costDifference;
-      // const marginDifference;
 
       entriesWithMargins[plannedMarginKey] = {
         financialYear: month.year,
@@ -349,20 +347,18 @@ class ForecastMatrix extends React.Component {
           </HeaderContainer>
           <HeaderRow>
             <RowLabel />
-            {months.map((month, index) => {
-              return (
-                <Cell style={{ border: 'none' }}>
-                  {(index === 0 || month.calendarMonth === 1) && (
-                    <YearLabel>{month.calendarYear}</YearLabel>
-                  )}
-                  <HeaderLabel>
-                    {moment()
-                      .month(month.calendarMonth - 1)
-                      .format('MMM')}
-                  </HeaderLabel>
-                </Cell>
-              );
-            })}
+            {months.map((month, index) => (
+              <Cell style={{ border: 'none' }}>
+                {(index === 0 || month.calendarMonth === 1) && (
+                  <YearLabel>{month.calendarYear}</YearLabel>
+                )}
+                <HeaderLabel>
+                  {moment()
+                    .month(month.calendarMonth - 1)
+                    .format('MMM')}
+                </HeaderLabel>
+              </Cell>
+            ))}
           </HeaderRow>
           {this.renderRow('Revenue')}
           <Space />
