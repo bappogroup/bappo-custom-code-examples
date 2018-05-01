@@ -423,7 +423,6 @@ const Input = styled.input`
   border: none;
   text-align: center;
   padding-right: 5px;
-  font-size: 11pt;
   border-bottom: 1px solid white;
   &:focus {
     outline: none;

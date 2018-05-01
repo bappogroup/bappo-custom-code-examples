@@ -1,11 +1,11 @@
 import React from 'react';
 import moment from 'moment';
 import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
+import { setUserPreferences, getUserPreferences } from 'userpreferences';
 import { dateFormat, getMonday, daysDisplayed, datesToArrayByStart, datesEqual } from 'utils';
 import SingleRoster from './SingleRoster';
 
 function truncString(str, max = 5, add = '...') {
-  add = add || '...';
   return typeof str === 'string' && str.length > max ? str.substring(0, max) + add : str;
 }
 
@@ -17,8 +17,19 @@ class Roster extends React.Component {
     consultants: [],
   };
 
-  componentDidMount() {
-    this.loadData();
+  async componentDidMount() {
+    const { $models, $global } = this.props;
+
+    // Load user preferences
+    const prefs = await getUserPreferences($global.currentUser.id, $models);
+    const { costCenter_id } = prefs;
+
+    if (costCenter_id) {
+      const costCenter = await $models.CostCenter.findById(costCenter_id);
+      this.setState({ costCenter }, () => this.loadData());
+    } else {
+      this.loadData();
+    }
   }
 
   // Bring up a popup asking which cost centre and start time
@@ -57,11 +68,17 @@ class Roster extends React.Component {
       onSubmit: async ({ costCenterId, startDate }) => {
         const costCenter = costCenters.find(cc => cc.id === costCenterId);
 
-        await this.setState({
-          costCenter,
-          startDate,
+        this.setState(
+          {
+            costCenter,
+            startDate,
+          },
+          () => this.loadData(),
+        );
+
+        setUserPreferences(this.props.$global.currentUser.id, $models, {
+          costCenter_id: costCenter.id,
         });
-        await this.loadData();
       },
     });
   };

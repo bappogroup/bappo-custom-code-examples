@@ -172,7 +172,7 @@ export const getServiceRevenueRosterEntries = async ({
 };
 
 /**
- * Calculate consultant salaries of a given month
+ * Calculate permanent consultant salaries of a given month
  *
  * @return {array} array of object containing consultant and salary
  */
@@ -223,6 +223,152 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
   }
 
   return consultantSalaries;
+};
+
+/**
+ * Get internal revenues within given time range
+ * Internal Revenue: negative cost, when consultants belong to this profit centre works on external projects
+ *
+ * @param {array of object} internalRevenues array containing rosterEntry, consultant and internalRate
+ */
+export const getInternalRevenue = async ({
+  $models,
+  consultants,
+  startDate,
+  endDate,
+  profitCentreIds,
+  projectAssignmentLookup,
+}) => {
+  const internalRevenues = [];
+  const consultantIds = consultants.map(c => c.id);
+
+  let consultantRosterEntries = [];
+  if (consultantIds.length > 0) {
+    consultantRosterEntries = await $models.RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
+        },
+        consultant_id: {
+          $in: consultantIds,
+        },
+      },
+      include: [{ as: 'project' }, { as: 'consultant' }],
+      limit: 10000,
+    });
+  }
+
+  const externalRevenueEntries = consultantRosterEntries.filter(
+    ce => profitCentreIds.indexOf(ce.project.profitCentre_id) === -1,
+  );
+
+  externalRevenueEntries.forEach(ee => {
+    // Get internalRate: from projectAssignment or consultant
+    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
+    if (!internalRate) {
+      const consultant = consultants.find(c => c.id === ee.consultant_id);
+      ({ internalRate } = consultant);
+    }
+
+    internalRevenues.push({
+      rosterEntry: ee,
+      consultant: ee.consultant,
+      internalRate,
+    });
+  });
+
+  return internalRevenues;
+};
+
+/**
+ * Get internal charges within given time range
+ * Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
+ *
+ * @param {array of object} internalCharges array containing rosterEntry, consultant and internalRate
+ */
+export const getInternalCharge = async ({
+  $models,
+  allConsultants,
+  costCenters,
+  startDate,
+  endDate,
+  projects,
+  projectAssignmentLookup,
+}) => {
+  const costCenterIds = costCenters.map(cc => cc.id);
+
+  const internalCharges = [];
+  const projectIds = projects.map(c => c.id);
+  let projectRosterEntries = [];
+  if (projectIds.length > 0) {
+    projectRosterEntries = await $models.RosterEntry.findAll({
+      where: {
+        date: {
+          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
+        },
+        project_id: {
+          $in: projectIds,
+        },
+      },
+      include: [{ as: 'project' }, { as: 'consultant' }],
+      limit: 10000,
+    });
+  }
+
+  const externalCostEntries = projectRosterEntries.filter(
+    pe => costCenterIds.indexOf(pe.consultant.costCenter_id) === -1,
+  );
+
+  externalCostEntries.forEach(ee => {
+    // Get internalRate: from projectAssignment or consultant
+    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
+    if (!internalRate) {
+      const consultant = allConsultants.find(c => c.id === ee.consultant_id);
+      ({ internalRate } = consultant);
+    }
+
+    internalCharges.push({
+      rosterEntry: ee,
+      consultant: ee.consultant,
+      internalRate,
+    });
+  });
+
+  return internalCharges;
+};
+
+/**
+ * Get details of fixed price project revenue of a month
+ * Source: fixed price project forecast entries
+ *
+ * @param {object} $models
+ * @param {string} financialYear
+ * @param {string} financialMonth
+ * @param {array of object} projects
+ * @return {object} project revenue, containing projectName - revenue pairs
+ */
+export const getFixPriceRevenues = async ({ $models, projects, financialYear, financialMonth }) => {
+  const projectRevenues = {};
+  const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
+    where: {
+      forecastType: '2', // 'Revenue'
+      financialYear: financialYear.toString(),
+      financialMonth: financialMonth.toString(),
+      project_id: {
+        $in: projects.map(p => p.id),
+      },
+    },
+    include: [{ as: 'project' }],
+    limit: 1000,
+  });
+
+  projectForecastEntries.forEach(e => {
+    const { name } = e.project;
+    if (!projectRevenues[name]) projectRevenues[name] = 0;
+    projectRevenues[name] += +e.amount;
+  });
+
+  return projectRevenues;
 };
 
 /**
@@ -381,6 +527,10 @@ const calculateContractorWages = async ({
   await ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
+/**
+ * Calculate permanent consultant salaries in a financial year
+ * Update forecast entries
+ */
 const calculateConsultantSalaries = async ({
   $models,
   financialYear,
@@ -424,108 +574,6 @@ const calculateConsultantSalaries = async ({
     },
   });
   await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
-};
-
-export const getInternalRevenue = async ({
-  $models,
-  consultants,
-  startDate,
-  endDate,
-  profitCentreIds,
-  projectAssignmentLookup,
-}) => {
-  // Internal Revenue: negative cost, when consultants belong to this profit centre works on external projects
-  const internalRevenues = [];
-  const consultantIds = consultants.map(c => c.id);
-
-  let consultantRosterEntries = [];
-  if (consultantIds.length > 0) {
-    consultantRosterEntries = await $models.RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
-        },
-        consultant_id: {
-          $in: consultantIds,
-        },
-      },
-      include: [{ as: 'project' }, { as: 'consultant' }],
-      limit: 10000,
-    });
-  }
-
-  const externalRevenueEntries = consultantRosterEntries.filter(
-    ce => profitCentreIds.indexOf(ce.project.profitCentre_id) === -1,
-  );
-
-  externalRevenueEntries.forEach(ee => {
-    // Get internalRate: from projectAssignment or consultant
-    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
-    if (!internalRate) {
-      const consultant = consultants.find(c => c.id === ee.consultant_id);
-      ({ internalRate } = consultant);
-    }
-
-    internalRevenues.push({
-      rosterEntry: ee,
-      consultant: ee.consultant,
-      internalRate,
-    });
-  });
-
-  return internalRevenues;
-};
-
-export const getInternalCharge = async ({
-  $models,
-  allConsultants,
-  costCenters,
-  startDate,
-  endDate,
-  projects,
-  projectAssignmentLookup,
-}) => {
-  const costCenterIds = costCenters.map(cc => cc.id);
-
-  // Internal Charge: postive cost, when external consultants work on projects belong to this profit centre
-  const internalCharges = [];
-  const projectIds = projects.map(c => c.id);
-  let projectRosterEntries = [];
-  if (projectIds.length > 0) {
-    projectRosterEntries = await $models.RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
-        },
-        project_id: {
-          $in: projectIds,
-        },
-      },
-      include: [{ as: 'project' }, { as: 'consultant' }],
-      limit: 10000,
-    });
-  }
-
-  const externalCostEntries = projectRosterEntries.filter(
-    pe => costCenterIds.indexOf(pe.consultant.costCenter_id) === -1,
-  );
-
-  externalCostEntries.forEach(ee => {
-    // Get internalRate: from projectAssignment or consultant
-    let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
-    if (!internalRate) {
-      const consultant = allConsultants.find(c => c.id === ee.consultant_id);
-      ({ internalRate } = consultant);
-    }
-
-    internalCharges.push({
-      rosterEntry: ee,
-      consultant: ee.consultant,
-      internalRate,
-    });
-  });
-
-  return internalCharges;
 };
 
 const calculateInternalRates = async ({
@@ -612,40 +660,6 @@ const calculateInternalRates = async ({
     },
   });
   await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
-};
-
-/**
- * Get details of fixed price project revenue of a month
- * Source: fixed price project forecast entries
- *
- * @param {object} $models
- * @param {string} financialYear
- * @param {string} financialMonth
- * @param {array of object} projects
- * @return {object} project revenue, containing projectName - revenue pairs
- */
-export const getFixPriceRevenues = async ({ $models, projects, financialYear, financialMonth }) => {
-  const projectRevenues = {};
-  const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
-    where: {
-      forecastType: '2', // 'Revenue'
-      financialYear: financialYear.toString(),
-      financialMonth: financialMonth.toString(),
-      project_id: {
-        $in: projects.map(p => p.id),
-      },
-    },
-    include: [{ as: 'project' }],
-    limit: 1000,
-  });
-
-  projectForecastEntries.forEach(e => {
-    const { name } = e.project;
-    if (!projectRevenues[name]) projectRevenues[name] = 0;
-    projectRevenues[name] += +e.amount;
-  });
-
-  return projectRevenues;
 };
 
 /**

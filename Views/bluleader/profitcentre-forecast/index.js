@@ -58,13 +58,14 @@ class ProfitCentreForecast extends React.Component {
         profitCentreId: this.state.profitCentre && this.state.profitCentre.id,
         financialYear: this.state.financialYear || getFinancialTimeFromDate().financialYear,
       },
-      onSubmit: async ({ profitCentreId, financialYear }) => {
+      onSubmit: ({ profitCentreId, financialYear }) => {
         const profitCentre = profitCentres.find(pc => pc.id === profitCentreId);
 
-        await this.setState({
+        this.setState({
           profitCentre,
           financialYear,
         });
+
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           profitcentre_id: profitCentreId,
           financialYear,
