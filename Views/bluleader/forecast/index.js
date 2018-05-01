@@ -13,7 +13,7 @@ class ForecastMatrix extends React.Component {
   monthArray = [];
 
   state = {
-    loading: true,
+    loading: false,
     entries: {},
     blur: false,
     reportParams: null,
@@ -25,6 +25,7 @@ class ForecastMatrix extends React.Component {
 
   componentDidMount() {
     this.monthArray = generateMonthArray();
+    this.loadData();
   }
 
   loadData = async () => {
@@ -38,7 +39,6 @@ class ForecastMatrix extends React.Component {
       include: [{ as: 'profitCentre' }, { as: 'costCentre' }, { as: 'forecastElement' }],
       limit: 100000,
       where: {
-        active: true,
         financialYear,
         profitCentre_id: {
           $in: profitCentreIds,
@@ -133,7 +133,7 @@ class ForecastMatrix extends React.Component {
     this.setState({ blur: true });
     const { entries } = this.state;
 
-    const profitCentre_id = profitCentreIds[0].id;
+    const profitCentre_id = profitCentreIds[0];
     await $models.ForecastEntry.destroy({
       where: {
         financialYear,
@@ -172,7 +172,7 @@ class ForecastMatrix extends React.Component {
           ...calculationBaseData,
           $models,
           financialYear,
-          profitCentre_id: profitCentreIds[0].id,
+          profitCentre_id: profitCentreIds[0],
         });
         break;
       }
@@ -344,8 +344,8 @@ class ForecastMatrix extends React.Component {
   };
 
   render() {
-    const { loading, blur, reportParams, calculationBaseData, title } = this.state;
-    const { profitCentreIds, financialYear } = this.props;
+    const { loading, blur, reportParams, calculationBaseData } = this.state;
+    const { title, profitCentreIds, financialYear } = this.props;
 
     if (!(profitCentreIds && profitCentreIds.length && financialYear)) {
       return (

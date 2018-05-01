@@ -21,7 +21,6 @@ class ProfitCentreForecast extends React.Component {
         profitCentre,
         financialYear,
       });
-      await this.loadData();
     }
   }
 
@@ -66,7 +65,6 @@ class ProfitCentreForecast extends React.Component {
           profitCentre,
           financialYear,
         });
-        await this.loadData();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           profitcentre_id: profitCentreId,
           financialYear,

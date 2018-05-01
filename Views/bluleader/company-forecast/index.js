@@ -29,7 +29,6 @@ class CompanyForecast extends React.Component {
         profitCentres,
         financialYear,
       });
-      await this.loadData();
     }
   }
 
@@ -82,7 +81,6 @@ class CompanyForecast extends React.Component {
           profitCentres,
           financialYear: selectedFinancialYear,
         });
-        await this.loadData();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
           company_id: companyId,
           financialYear: selectedFinancialYear,

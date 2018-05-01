@@ -48,16 +48,15 @@ const billableProbabilities = ['50%', '90%', '100%'];
 
 /**
  * Determine whether a roster entry incurs contractor wage
+ * Conditions are:
+ * 1. prob >= 50%
+ * 2. project type === 2 ('T&M')
+ * 3. consultant type === 2 ('Contractor')
  *
  * @param {object} roster entry
- * @return {bool}
+ * @return {boolean}
  */
 const rosterEntryIncursContractorWages = rosterEntry => {
-  // Find roster entries that incur 'Contractor Wages', and update forecast entries for that element
-  // Conditions are:
-  // - prob >= 50%,
-  // - project type === 2 ('T&M')
-  // - consultant type === 2 ('Contractor')
   const probability = _.get(rosterEntry, 'probability.name');
   if (
     _.get(rosterEntry, 'consultant.consultantType') === '2' &&
@@ -229,9 +228,17 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
   return consultantSalaries;
 };
 
-// Calculate 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
-// And update the forecast entrie records
-export const calculateServiceRevenueAndContractorWages = async ({
+/**
+ * Calculate and update 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
+ *
+ * 1. 'Service Revenue':
+ * Accumulate revenue gained from roster entries. Revenue comes from ProjectAssignment.dayRate
+ *
+ * 2. 'Contractor Wages':
+ * Accumulate consultant daily rates from roster entries that incur contractor wages
+ *
+ */
+const calculateServiceRevenueAndContractorWages = async ({
   $models,
   financialYear,
   forecastElements,
@@ -257,6 +264,7 @@ export const calculateServiceRevenueAndContractorWages = async ({
     month: 6,
   });
   const endDate = startDate.clone().add(1, 'year');
+
   let rosterEntriesByProjects = [];
   if (projectIds.length > 0) {
     rosterEntriesByProjects = await RosterEntry.findAll({
@@ -272,6 +280,7 @@ export const calculateServiceRevenueAndContractorWages = async ({
       limit: 100000,
     });
   }
+
   let rosterEntriesByConsultants = [];
   if (consultantIds.length > 0) {
     rosterEntriesByConsultants = await RosterEntry.findAll({
@@ -288,23 +297,20 @@ export const calculateServiceRevenueAndContractorWages = async ({
     });
   }
 
-  // Calculate forecast entries
+  // Calculate service revenues
   for (const rosterEntry of rosterEntriesByProjects) {
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
-    const { calendarMonth, calendarYear } = time.financialToCalendar({
-      financialYear,
-      financialMonth,
-    });
 
-    // Service Revenue. It must exist!
+    // This project assignment must exist!
     const { dayRate } = projectAssignmentLookup[
       `${rosterEntry.consultant_id}.${rosterEntry.project_id}`
     ];
 
     const serviceRevenueKey = getForecastEntryKey(
-      calendarYear,
-      calendarMonth,
+      financialYear,
+      financialMonth,
       serviceRevenueElementId,
+      true,
     );
 
     if (!forecastEntries[serviceRevenueKey]) {
@@ -319,21 +325,18 @@ export const calculateServiceRevenueAndContractorWages = async ({
     forecastEntries[serviceRevenueKey].amount += +dayRate;
   }
 
+  // Calculate contractor wages
   for (const rosterEntry of rosterEntriesByConsultants) {
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
-    const { calendarMonth, calendarYear } = time.financialToCalendar({
-      financialYear,
-      financialMonth,
-    });
 
-    // Contractor Wages
     if (rosterEntryIncursContractorWages(rosterEntry)) {
       const { dailyRate } = rosterEntry.consultant;
 
       const contractorWagesKey = getForecastEntryKey(
-        calendarYear,
-        calendarMonth,
+        financialYear,
+        financialMonth,
         contractorWagesElementId,
+        true,
       );
 
       if (!forecastEntries[contractorWagesKey]) {
@@ -441,9 +444,6 @@ export const getInternalRevenue = async ({
 
   externalRevenueEntries.forEach(ee => {
     // Get internalRate: from projectAssignment or consultant
-    if (!projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`]) {
-      console.log(1, projectAssignmentLookup, ee);
-    }
     let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
     if (!internalRate) {
       const consultant = consultants.find(c => c.id === ee.consultant_id);
@@ -496,9 +496,6 @@ export const getInternalCharge = async ({
 
   externalCostEntries.forEach(ee => {
     // Get internalRate: from projectAssignment or consultant
-    if (!projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`]) {
-      console.log(2, projectAssignmentLookup, ee);
-    }
     let { internalRate } = projectAssignmentLookup[`${ee.consultant_id}.${ee.project_id}`];
     if (!internalRate) {
       const consultant = allConsultants.find(c => c.id === ee.consultant_id);
@@ -714,16 +711,6 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
 
   const consultants = allConsultants.filter(c => costCenterIds.indexOf(c.costCenter_id) !== -1);
 
-  // const consultants = await $models.Consultant.findAll({
-  //   where: {
-  //     costCenter_id: {
-  //       $in: costCenterIds,
-  //     },
-  //   },
-  //   include: [{ as: 'costCenter' }],
-  //   limit: 1000,
-  // });
-
   const consultantIds = consultants.map(c => c.id);
 
   // Find all projects
@@ -767,7 +754,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
     },
   });
 
-  // General data for calculations
+  // General data for future calculations
   return {
     costCenters,
     allConsultants,

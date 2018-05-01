@@ -50,11 +50,9 @@ class Dummy extends React.Component {
   };
 
   generateConsultants = async () => {
-    const { Consultant, CostCenter } = this.props.$models;
-    // const cs = await Consultant.findAll({ limit: 1, where: { id: 308} });
-    // const costCenters = await CostCenter.findAll({});
+    const { Consultant } = this.props.$models;
 
-    await Consultant.destroy({ where: {} });
+    Consultant.destroy({ where: {} });
 
     const count = 100;
 
@@ -62,7 +60,7 @@ class Dummy extends React.Component {
       active: true,
       annualSalary: '120000.00',
       consultantType: '2',
-      costCenter_id: '6',
+      costCenter_id: '1',
       internalRate: '600.00',
       name: 'Consultant',
       startDate: '2018-01-01',
@@ -91,7 +89,7 @@ class Dummy extends React.Component {
 
     const a = [];
     for (let c of consultants) {
-      a.push({ consultant_id: c.id, project_id: '11', dayRate: '1300' });
+      a.push({ consultant_id: c.id, project_id: '1', dayRate: '700' });
     }
 
     try {
