@@ -319,9 +319,11 @@ class ForecastReport extends React.Component {
 
   renderProjectTable = () => {
     const { fixProjects, projectEntries, projectElements, projectTotals } = this.state;
+    if (!fixProjects.length) return null;
+
     return (
       <div style={{ marginTop: 30 }}>
-        {fixProjects.length > 0 && <Row style={{ borderTop: 'none' }}>Projects:</Row>}
+        {<Row style={{ borderTop: 'none' }}>Projects:</Row>}
         <Row style={{ borderTop: 'none' }}>
           <RowLabel />
           {projectElements.map(element => <Cell>{element.name}</Cell>)}
@@ -335,15 +337,24 @@ class ForecastReport extends React.Component {
     );
   };
 
-  renderRow = (name, entries, consultantElements) => (
-    <Row>
-      <RowLabel>{name}</RowLabel>
-      {consultantElements.map(element => {
-        const key = getTableKey(name, element.name);
-        return <Cell>{entries[key] || 0}</Cell>;
-      })}
-    </Row>
-  );
+  renderRow = (name, entries, consultantElements) => {
+    let allZero = true;
+    const cells = consultantElements.map(element => {
+      const key = getTableKey(name, element.name);
+      if (entries[key] && +entries[key] !== 0) allZero = false;
+      return <Cell>{entries[key] || 0}</Cell>;
+    });
+
+    // Don't display a row if all values are 0
+    if (allZero) return null;
+
+    return (
+      <Row>
+        <RowLabel>{name}</RowLabel>
+        {cells}
+      </Row>
+    );
+  };
 
   render() {
     const { loading, name, consultantElements, showTables } = this.state;

@@ -84,6 +84,7 @@ class ProfitCentreForecast extends React.Component {
         title={title}
         financialYear={financialYear}
         profitCentreIds={[profitCentre.id]}
+        setFilters={this.setFilters}
         $models={this.props.$models}
       />
     );

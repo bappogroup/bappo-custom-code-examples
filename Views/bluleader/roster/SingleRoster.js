@@ -1,7 +1,7 @@
 import React from 'react';
 import moment from 'moment';
 import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
-import { getMonday, datesToArray } from 'utils';
+import { dateFormat, getMonday, datesToArray } from 'utils';
 
 const weekdays = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -67,7 +67,7 @@ class SingleRoster extends React.Component {
       where: {
         consultant_id: consultant.id,
         date: {
-          $between: [startDate.toDate(), endDate.toDate()],
+          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
         },
       },
       include: [{ as: 'project' }, { as: 'probability' }],

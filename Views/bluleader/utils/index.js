@@ -5,6 +5,8 @@ import * as time from './time';
 export * from './time';
 export * from './rosterTime';
 
+export const dateFormat = 'YYYY-MM-DD';
+
 /**
  * Generate a unique key for a forecast entry in a table.
  *
@@ -87,17 +89,12 @@ export const getWageRosterEntries = async ({
     month: calendarMonth - 1,
     day: 1,
   });
+  const endDate = startDate.clone().add(1, 'month');
 
   const rosterEntries = await $models.RosterEntry.findAll({
     where: {
       date: {
-        $between: [
-          startDate.toDate(),
-          startDate
-            .clone()
-            .add(1, 'month')
-            .toDate(),
-        ],
+        $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
       },
       consultant_id: {
         $in: consultants.map(c => c.id),
@@ -144,11 +141,11 @@ export const getServiceRevenueRosterEntries = async ({
     where: {
       date: {
         $between: [
-          startDate.toDate(),
+          startDate.format(dateFormat),
           startDate
             .clone()
             .add(1, 'month')
-            .toDate(),
+            .format(dateFormat),
         ],
       },
       project_id: {
@@ -229,73 +226,44 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
 };
 
 /**
- * Calculate and update 'Service Revenue' row and 'Contractor Wages' row in a financial year, of a profit centre
- *
- * 1. 'Service Revenue':
- * Accumulate revenue gained from roster entries. Revenue comes from ProjectAssignment.dayRate
- *
- * 2. 'Contractor Wages':
- * Accumulate consultant daily rates from roster entries that incur contractor wages
- *
+ * Calculate and update 'Service Revenue' row in a financial year, of a profit centre, by:
+ * accumulating revenue gained from roster entries. Revenue comes from ProjectAssignment.dayRate
  */
-const calculateServiceRevenueAndContractorWages = async ({
+const calculateServiceRevenue = async ({
   $models,
   financialYear,
   forecastElements,
   profitCentre_id,
   projectAssignmentLookup,
   projects,
-  consultants,
 }) => {
   const { RosterEntry, ForecastEntry } = $models;
   const forecastEntries = {};
-
   const serviceRevenueElementId = forecastElements.find(e => e.key === 'TMREV').id;
-  const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
-  if (!(projects.length && serviceRevenueElementId && contractorWagesElementId)) return;
 
-  const consultantIds = consultants.map(c => c.id);
+  if (!(projects.length && serviceRevenueElementId)) return;
+
   const projectIds = projects.map(p => p.id);
 
-  // Fetch roster entries for the whole financial year, of this profit centre
-  // include consultants if it's a contractor
   const startDate = moment({
     year: financialYear,
     month: 6,
+    day: 1,
   });
   const endDate = startDate.clone().add(1, 'year');
 
-  let rosterEntriesByProjects = [];
-  if (projectIds.length > 0) {
-    rosterEntriesByProjects = await RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [startDate.toDate(), endDate.toDate()],
-        },
-        project_id: {
-          $in: projectIds,
-        },
+  const rosterEntriesByProjects = await RosterEntry.findAll({
+    where: {
+      date: {
+        $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
       },
-      include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
-      limit: 100000,
-    });
-  }
-
-  let rosterEntriesByConsultants = [];
-  if (consultantIds.length > 0) {
-    rosterEntriesByConsultants = await RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [startDate.toDate(), endDate.toDate()],
-        },
-        consultant_id: {
-          $in: consultantIds,
-        },
+      project_id: {
+        $in: projectIds,
       },
-      include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
-      limit: 100000,
-    });
-  }
+    },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+    limit: 100000,
+  });
 
   // Calculate service revenues
   for (const rosterEntry of rosterEntriesByProjects) {
@@ -324,6 +292,56 @@ const calculateServiceRevenueAndContractorWages = async ({
     }
     forecastEntries[serviceRevenueKey].amount += +dayRate;
   }
+
+  // Remove previous forecast entries and create new
+  await ForecastEntry.destroy({
+    where: {
+      financialYear: financialYear.toString(),
+      forecastElement_id: serviceRevenueElementId,
+      profitCentre_id,
+    },
+  });
+  await ForecastEntry.bulkCreate(Object.values(forecastEntries));
+};
+
+/**
+ * Calculate and update 'Contractor Wages' row in a financial year, of a profit centre, by:
+ * accumulating consultant daily rates from roster entries that incur contractor wages
+ */
+const calculateContractorWages = async ({
+  $models,
+  financialYear,
+  forecastElements,
+  profitCentre_id,
+  consultants,
+}) => {
+  const { RosterEntry, ForecastEntry } = $models;
+  const forecastEntries = {};
+  const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
+
+  if (!(consultants.length && contractorWagesElementId)) return;
+
+  const consultantIds = consultants.map(c => c.id);
+
+  const startDate = moment({
+    year: financialYear,
+    month: 6,
+    day: 1,
+  });
+  const endDate = startDate.clone().add(1, 'year');
+
+  const rosterEntriesByConsultants = await RosterEntry.findAll({
+    where: {
+      date: {
+        $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
+      },
+      consultant_id: {
+        $in: consultantIds,
+      },
+    },
+    include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
+    limit: 100000,
+  });
 
   // Calculate contractor wages
   for (const rosterEntry of rosterEntriesByConsultants) {
@@ -356,16 +374,14 @@ const calculateServiceRevenueAndContractorWages = async ({
   await ForecastEntry.destroy({
     where: {
       financialYear: financialYear.toString(),
-      forecastElement_id: {
-        $in: [serviceRevenueElementId, contractorWagesElementId],
-      },
+      forecastElement_id: contractorWagesElementId,
       profitCentre_id,
     },
   });
   await ForecastEntry.bulkCreate(Object.values(forecastEntries));
 };
 
-export const calculateConsultantSalaries = async ({
+const calculateConsultantSalaries = async ({
   $models,
   financialYear,
   forecastElements,
@@ -427,7 +443,7 @@ export const getInternalRevenue = async ({
     consultantRosterEntries = await $models.RosterEntry.findAll({
       where: {
         date: {
-          $between: [startDate.toDate(), endDate.toDate()],
+          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
         },
         consultant_id: {
           $in: consultantIds,
@@ -479,7 +495,7 @@ export const getInternalCharge = async ({
     projectRosterEntries = await $models.RosterEntry.findAll({
       where: {
         date: {
-          $between: [startDate.toDate(), endDate.toDate()],
+          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
         },
         project_id: {
           $in: projectIds,
@@ -600,6 +616,7 @@ const calculateInternalRates = async ({
 
 /**
  * Get details of fixed price project revenue of a month
+ * Source: fixed price project forecast entries
  *
  * @param {object} $models
  * @param {string} financialYear
@@ -611,9 +628,9 @@ export const getFixPriceRevenues = async ({ $models, projects, financialYear, fi
   const projectRevenues = {};
   const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
     where: {
-      forecastType: '2',
-      financialYear,
-      financialMonth,
+      forecastType: '2', // 'Revenue'
+      financialYear: financialYear.toString(),
+      financialMonth: financialMonth.toString(),
       project_id: {
         $in: projects.map(p => p.id),
       },
@@ -638,7 +655,7 @@ export const getFixPriceRevenues = async ({ $models, projects, financialYear, fi
  * @param {array of string} profitCentreIds
  * @return {object} base data
  */
-export const calculateFixPriceRevenues = async ({
+const calculateFixPriceRevenues = async ({
   $models,
   profitCentre_id,
   projects,
@@ -651,7 +668,7 @@ export const calculateFixPriceRevenues = async ({
   const projectForecastEntries = await $models.ProjectForecastEntry.findAll({
     where: {
       forecastType: '2',
-      financialYear,
+      financialYear: financialYear.toString(),
       project_id: {
         $in: projects.map(p => p.id),
       },
@@ -788,7 +805,8 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
  */
 export const calculateForecastForProfitCentre = params =>
   Promise.all([
-    calculateServiceRevenueAndContractorWages(params),
+    calculateServiceRevenue(params),
+    calculateContractorWages(params),
     calculateConsultantSalaries(params),
     calculateInternalRates(params),
     calculateFixPriceRevenues(params),

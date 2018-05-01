@@ -2,12 +2,7 @@ import React from 'react';
 import moment from 'moment';
 import { styled } from 'bappo-components';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
-import {
-  getForecastEntryKey,
-  getForecastEntryKeyByDate,
-  getFinancialTimeFromDate,
-  calendarToFinancial,
-} from 'utils';
+import { getForecastEntryKey, getForecastEntryKeyByDate, calendarToFinancial } from 'utils';
 
 const forecastTypeLabelToValue = label => {
   switch (label.toString()) {
@@ -29,6 +24,75 @@ const forecastTypeValueToLabel = value => {
     default:
       return null;
   }
+};
+
+const calculateMargins = (entries, months) => {
+  const entriesWithMargins = Object.assign({}, entries);
+
+  months.forEach(month => {
+    const plannedMarginKey = getForecastEntryKey(
+      month.calendarYear,
+      month.calendarMonth,
+      'Planned Margin',
+    );
+    const actualMarginKey = getForecastEntryKey(
+      month.calendarYear,
+      month.calendarMonth,
+      'Actual Margin',
+    );
+    const costDiffKey = getForecastEntryKey(
+      month.calendarYear,
+      month.calendarMonth,
+      'Cost Difference',
+    );
+    const marginDiffKey = getForecastEntryKey(
+      month.calendarYear,
+      month.calendarMonth,
+      'Margin Difference',
+    );
+
+    const revenueEntry =
+      entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Revenue')];
+
+    const costFromRosterEntry =
+      entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Cost from Roster')];
+
+    const plannedCostEntry =
+      entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Planned Cost')];
+
+    // calculate planned and actual margins
+    const revenue = +(revenueEntry && revenueEntry.amount) || 0;
+    const plannedCost = +(plannedCostEntry && plannedCostEntry.amount) || 0;
+    const actualCost = +(costFromRosterEntry && costFromRosterEntry.amount) || 0;
+
+    const plannedMargin = revenue - plannedCost;
+    const actualMargin = revenue - actualCost;
+    const costDifference = actualCost - plannedCost;
+    const marginDifference = actualMargin - plannedMargin;
+
+    entriesWithMargins[plannedMarginKey] = {
+      financialYear: month.year,
+      financialMonth: month.month,
+      amount: plannedMargin,
+    };
+    entriesWithMargins[actualMarginKey] = {
+      financialYear: month.year,
+      financialMonth: month.month,
+      amount: actualMargin,
+    };
+    entriesWithMargins[costDiffKey] = {
+      financialYear: month.year,
+      financialMonth: month.month,
+      amount: costDifference,
+    };
+    entriesWithMargins[marginDiffKey] = {
+      financialYear: month.year,
+      financialMonth: month.month,
+      amount: marginDifference,
+    };
+  });
+
+  return entriesWithMargins;
 };
 
 class ForecastMatrix extends React.Component {
@@ -94,6 +158,7 @@ class ForecastMatrix extends React.Component {
         const chosenProject = projects.find(p => p.id === projectId);
         await this.setState({
           project: chosenProject,
+          entries: {},
         });
         await this.loadData();
         setUserPreferences(this.props.$global.currentUser.id, $models, {
@@ -114,7 +179,6 @@ class ForecastMatrix extends React.Component {
     // Get months for this project
     const startDate = moment(project.startDate);
     const endDate = moment(project.endDate);
-    // const { financialYear } = getFinancialTimeFromDate(startDate);
 
     while (endDate > startDate || startDate.format('M') === endDate.format('M')) {
       months.push({
@@ -169,10 +233,9 @@ class ForecastMatrix extends React.Component {
 
     await this.setState({
       loading: false,
-      entries,
+      entries: calculateMargins(entries, months),
       months,
     });
-    this.calculateMargins();
   };
 
   handleCellChange = async (month, type, amount) => {
@@ -193,87 +256,13 @@ class ForecastMatrix extends React.Component {
       };
       return {
         ...state,
-        entries,
+        entries: calculateMargins(entries, state.months),
       };
     });
-    this.calculateMargins();
-  };
-
-  calculateMargins = () => {
-    const { entries, months } = this.state;
-    const entriesWithMargins = Object.assign({}, entries);
-
-    months.forEach(month => {
-      const plannedMarginKey = getForecastEntryKey(
-        month.calendarYear,
-        month.calendarMonth,
-        'Planned Margin',
-      );
-      const actualMarginKey = getForecastEntryKey(
-        month.calendarYear,
-        month.calendarMonth,
-        'Actual Margin',
-      );
-      const costDiffKey = getForecastEntryKey(
-        month.calendarYear,
-        month.calendarMonth,
-        'Cost Difference',
-      );
-      const marginDiffKey = getForecastEntryKey(
-        month.calendarYear,
-        month.calendarMonth,
-        'Margin Difference',
-      );
-
-      const revenueEntry =
-        entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Revenue')];
-
-      const costFromRosterEntry =
-        entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Cost from Roster')];
-
-      const plannedCostEntry =
-        entries[getForecastEntryKey(month.calendarYear, month.calendarMonth, 'Planned Cost')];
-
-      // calculate planned and actual margins
-      const revenue = +(revenueEntry && revenueEntry.amount) || 0;
-      const plannedCost = +(plannedCostEntry && plannedCostEntry.amount) || 0;
-      const actualCost = +(costFromRosterEntry && costFromRosterEntry.amount) || 0;
-
-      const plannedMargin = revenue - plannedCost;
-      const actualMargin = revenue - actualCost;
-      const costDifference = actualCost - plannedCost;
-      const marginDifference = plannedMargin - actualMargin;
-
-      entriesWithMargins[plannedMarginKey] = {
-        financialYear: month.year,
-        financialMonth: month.month,
-        amount: plannedMargin,
-      };
-      entriesWithMargins[actualMarginKey] = {
-        financialYear: month.year,
-        financialMonth: month.month,
-        amount: actualMargin,
-      };
-      entriesWithMargins[costDiffKey] = {
-        financialYear: month.year,
-        financialMonth: month.month,
-        amount: costDifference,
-      };
-      entriesWithMargins[marginDiffKey] = {
-        financialYear: month.year,
-        financialMonth: month.month,
-        amount: marginDifference,
-      };
-    });
-
-    return this.setState(state => ({
-      ...state,
-      entries: entriesWithMargins,
-    }));
   };
 
   save = async () => {
-    this.setState({ saving: true });
+    this.setState({ blur: true });
     const { ProjectForecastEntry } = this.props.$models;
     const { project, entries } = this.state;
 
@@ -293,7 +282,7 @@ class ForecastMatrix extends React.Component {
 
     await ProjectForecastEntry.bulkCreate(entriesToCreate);
 
-    this.setState({ saving: false });
+    this.setState({ blur: false });
   };
 
   renderRow = (type, disabled) => (
@@ -308,7 +297,7 @@ class ForecastMatrix extends React.Component {
   renderCell = (month, type, disabled = false) => {
     const key = getForecastEntryKey(month.calendarYear, month.calendarMonth, type);
     const entry = this.state.entries[key];
-    const value = entry && entry.amount;
+    const value = (entry && entry.amount) || 0;
 
     const isMargin = type === 'Planned Margin' || type === 'Actual Margin';
 
@@ -324,7 +313,7 @@ class ForecastMatrix extends React.Component {
   };
 
   render() {
-    const { loading, saving, project, months } = this.state;
+    const { loading, blur, project, months } = this.state;
 
     if (!project) {
       return (
@@ -339,7 +328,7 @@ class ForecastMatrix extends React.Component {
     }
 
     return (
-      <Container saving={saving}>
+      <Container blur={blur}>
         <TableContainer>
           <HeaderContainer>
             <Heading>Project: {project.name}</Heading>

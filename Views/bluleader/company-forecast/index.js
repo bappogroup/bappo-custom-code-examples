@@ -34,7 +34,6 @@ class CompanyForecast extends React.Component {
 
   setFilters = async () => {
     const { $models, $popup } = this.props;
-    const { company, financialYear } = this.state;
 
     const companies = await $models.Company.findAll({
       limit: 1000,
@@ -64,8 +63,8 @@ class CompanyForecast extends React.Component {
         },
       ],
       initialValues: {
-        companyId: company && company.id,
-        financialYear: financialYear || getFinancialTimeFromDate().financialYear,
+        companyId: this.state.company && this.state.company.id,
+        financialYear: this.state.financialYear || getFinancialTimeFromDate().financialYear,
       },
       onSubmit: async ({ companyId, financialYear: selectedFinancialYear }) => {
         const selectedCompany = companies.find(com => com.id === companyId);
@@ -101,6 +100,7 @@ class CompanyForecast extends React.Component {
         title={title}
         financialYear={financialYear}
         profitCentreIds={profitCentres.map(pc => pc.id)}
+        setFilters={this.setFilters}
         $models={this.props.$models}
       />
     );

@@ -1,7 +1,7 @@
 import React from 'react';
 import moment from 'moment';
 import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
-import { getMonday, daysDisplayed, datesToArray, datesToArrayByStart, datesEqual } from 'utils';
+import { dateFormat, getMonday, daysDisplayed, datesToArrayByStart, datesEqual } from 'utils';
 import SingleRoster from './SingleRoster';
 
 function truncString(str, max = 5, add = '...') {
@@ -52,7 +52,7 @@ class Roster extends React.Component {
       ],
       initialValues: {
         costCenterId: this.state.costCenter && this.state.costCenter.id,
-        startDate: this.state.startDate || moment().toDate(),
+        startDate: this.state.startDate || moment().format(dateFormat),
       },
       onSubmit: async ({ costCenterId, startDate }) => {
         const costCenter = costCenters.find(cc => cc.id === costCenterId);
@@ -86,10 +86,10 @@ class Roster extends React.Component {
       where: {
         date: {
           $between: [
-            moment(startDate).toDate(),
+            moment(startDate).format(dateFormat),
             moment(startDate)
               .add(daysDisplayed, 'day')
-              .toDate(),
+              .format(dateFormat),
           ],
         },
         consultant_id: {
@@ -121,10 +121,10 @@ class Roster extends React.Component {
       where: {
         date: {
           $between: [
-            moment(startDate).toDate(),
+            moment(startDate).format(dateFormat),
             moment(startDate)
               .add(daysDisplayed, 'day')
-              .toDate(),
+              .format(dateFormat),
           ],
         },
         consultant_id,

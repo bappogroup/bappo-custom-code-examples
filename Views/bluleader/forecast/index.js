@@ -28,6 +28,15 @@ class ForecastMatrix extends React.Component {
     this.loadData();
   }
 
+  async componentDidUpdate(prevProps) {
+    if (
+      prevProps.financialYear !== this.props.financialYear ||
+      prevProps.profitCentreIds !== this.props.profitCentreIds
+    ) {
+      this.loadData();
+    }
+  }
+
   loadData = async () => {
     const { $models, financialYear, profitCentreIds } = this.props;
     if (!(financialYear && profitCentreIds && profitCentreIds.length)) return;
@@ -250,6 +259,8 @@ class ForecastMatrix extends React.Component {
   };
 
   setReportParams = async (financialMonth, elementKey, showTables) => {
+    if (!this.state.calculationBaseData) await this.calculate();
+
     const { financialYear } = this.props;
 
     this.setState({
@@ -345,13 +356,13 @@ class ForecastMatrix extends React.Component {
 
   render() {
     const { loading, blur, reportParams, calculationBaseData } = this.state;
-    const { title, profitCentreIds, financialYear } = this.props;
+    const { title, profitCentreIds, financialYear, setFilters } = this.props;
 
     if (!(profitCentreIds && profitCentreIds.length && financialYear)) {
       return (
         <Loading>
           Please set filters to continue.
-          <TextButton onClick={this.setFilters}>set</TextButton>
+          <TextButton onClick={setFilters}>set</TextButton>
         </Loading>
       );
     }
@@ -365,7 +376,7 @@ class ForecastMatrix extends React.Component {
           <Heading>
             {title}, financial year {financialYear}
           </Heading>
-          <TextButton onClick={this.setFilters}>change</TextButton>
+          <TextButton onClick={setFilters}>change</TextButton>
           <TextButton onClick={this.calculate}>calculate</TextButton>
         </HeaderContainer>
 
