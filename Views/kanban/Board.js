@@ -33,6 +33,13 @@ class Board extends React.Component {
       }
       issuesByStatus[issue.status].push(issue);
     });
+
+    Object.keys(issuesByStatus).forEach((key, index) => {
+      issuesByStatus[key].sort((a, b) => {
+        return (a.id - b.id) || a.name.localeCompare(b.name);
+      });
+    });
+
     this.setState({
       issuesById,
       issuesByStatus,
@@ -124,9 +131,13 @@ class Board extends React.Component {
   };
 
   selectIssue = issue => {
-    this.setState({
-      selectedIssueId: issue.id,
-    });
+    if(this.state.selectedIssueId === issue.id){
+      this.openEditIssueForm();
+    }else{
+      this.setState({
+        selectedIssueId: issue.id,
+      });
+    }
   };
 
   render() {

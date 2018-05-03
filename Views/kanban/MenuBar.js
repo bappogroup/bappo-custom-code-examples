@@ -33,7 +33,11 @@ const MenuBar = ({
           <MenuButtonText>Workflow</MenuButtonText>
         </MenuButton>
       </MenuButtonContainer>
-      <SearchInput placeholder="search" value={searchValue} onValueChange={changeSearchValue} />
+      <SearchInput
+        placeholder="search"
+        value={searchValue}
+        onValueChange={changeSearchValue}
+      />
     </Container>
   );
 };
@@ -77,5 +81,4 @@ const SearchInput = styled(TextInput)`
   height: 30px;
   font-family: arial;
   color: #bbb;
-  placeholder: search;
 `;

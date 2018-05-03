@@ -1,6 +1,7 @@
 import React from 'react';
 import { styled, Text, View } from 'bappo-components';
 
+
 const getInitials = ({ firstName, lastName, email }) => {
   const firstNameLetter = firstName && firstName.charAt(0).toUpperCase();
   const lastNameLetter = lastName && lastName.charAt(0).toUpperCase();
