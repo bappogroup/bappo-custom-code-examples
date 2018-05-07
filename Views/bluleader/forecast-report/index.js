@@ -3,7 +3,7 @@ import moment from 'moment';
 import { ActivityIndicator, styled } from 'bappo-components';
 import {
   financialToCalendar,
-  getWageRosterEntries,
+  getContractorWagesByMonth,
   getServiceRevenueRosterEntries,
   getConsultantSalariesByMonth,
   getConsultantBonusesByMonth,
@@ -26,6 +26,10 @@ const consultantForecastElements = [
   {
     key: 'BON',
     name: 'Bonus Provision',
+  },
+  {
+    key: 'PTAX',
+    name: 'Payroll Tax',
   },
   {
     key: 'CWAGES',
@@ -117,16 +121,15 @@ class ForecastReport extends React.Component {
           case 'CWAGES': {
             if (!showTables.includes('consultant')) showTables.push('consultant');
             // Contractor wages
-            const promise = getWageRosterEntries({
+            const promise = getContractorWagesByMonth({
               $models,
               calendarYear,
               calendarMonth,
               consultants,
-            }).then(wageRosterEntries => {
-              wageRosterEntries.forEach(entry => {
-                const key = getTableKey(entry.consultant.name, 'Contractor Wages');
-                if (!consultantEntries[key]) consultantEntries[key] = 0;
-                consultantEntries[key] += +entry.consultant.dailyRate;
+            }).then(wages => {
+              wages.forEach(({ consultant, wage }) => {
+                const key = getTableKey(consultant.name, 'Contractor Wages');
+                consultantEntries[key] = wage;
               });
             });
             promises.push(promise);
@@ -160,6 +163,16 @@ class ForecastReport extends React.Component {
               consultantEntries[key] = bonus;
             });
             break;
+          }
+          case 'PTAX': {
+            if (!showTables.includes('consultant')) showTables.push('consultant');
+            // Payroll Tax
+            const payrollTaxes = getPayrollTaxesByMonth({
+              $models,
+              consultants,
+              financialYear,
+              financialMonth,
+            });
           }
           case 'TMREV': {
             if (!showTables.includes('consultant')) showTables.push('consultant');

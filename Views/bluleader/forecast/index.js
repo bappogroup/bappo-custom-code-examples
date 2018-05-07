@@ -284,6 +284,7 @@ class ForecastMatrix extends React.Component {
         case 'TMREV':
         case 'FIXREV':
         case 'CWAGES':
+        case 'PTAX':
         case 'INTCH':
         case 'INTREV':
           displayOnly = true;

@@ -71,17 +71,24 @@ const rosterEntryIncursContractorWages = rosterEntry => {
 };
 
 /**
- * Get roster entries that incurs contractor wages of a given month
+ * Get contractor wages of a given month
  *
- * @return {array} roster entry array
+ * @param {object} $models
+ * @param {array} consultants within the costCenters
+ * @param {string} calendarYear
+ * @param {string} calendarMonth
+ * @return {array} array of object containing consultant and wage
  */
-export const getWageRosterEntries = async ({
+export const getContractorWagesByMonth = async ({
   $models,
   calendarYear,
   calendarMonth,
   consultants,
 }) => {
   if (!(calendarYear && calendarMonth)) return [];
+
+  const contractors = consultants.filter(c => c.consultantType === '2');
+  const contractorWages = {};
 
   // Fetch roster entries of given month
   const startDate = moment({
@@ -97,7 +104,7 @@ export const getWageRosterEntries = async ({
         $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
       },
       consultant_id: {
-        $in: consultants.map(c => c.id),
+        $in: contractors.map(c => c.id),
       },
     },
     include: [{ as: 'consultant' }, { as: 'project' }, { as: 'probability' }],
@@ -105,15 +112,23 @@ export const getWageRosterEntries = async ({
   });
 
   // Get contractor wages entries
-  const wageEntries = [];
   for (const rosterEntry of rosterEntries) {
     // Contractor Wages
     if (rosterEntryIncursContractorWages(rosterEntry)) {
-      wageEntries.push(rosterEntry);
+      const consultantId = rosterEntry.consultant.id;
+      if (!contractorWages[consultantId]) {
+        contractorWages[consultantId] = {
+          consultant: rosterEntry.consultant,
+          wage: 0,
+        };
+      }
+      if (rosterEntry.consultant.dailyRate) {
+        contractorWages[consultantId].wage += +rosterEntry.consultant.dailyRate;
+      }
     }
   }
 
-  return wageEntries;
+  return Object.values(contractorWages);
 };
 
 /**
@@ -172,11 +187,11 @@ export const getServiceRevenueRosterEntries = async ({
 };
 
 /**
- * Calculate permanent consultant salaries of a given month
+ * Get permanent consultant salaries of a given month
  *
  * @param {array} consultants within the costCenters
- * @param {array} financialYear
- * @param {array} financialMonth
+ * @param {string} financialYear
+ * @param {string} financialMonth
  * @return {array} array of object containing consultant and salary
  */
 export const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMonth }) => {
@@ -246,6 +261,44 @@ export const getConsultantBonusesByMonth = ({ consultants }) => {
   }
 
   return consultantBonuses;
+};
+
+/**
+ * Calculate payroll tax for consultant of a given month
+ * For permanents: 6% of salary
+ * For contractors that has incursPayrollTax flag on: 6% of wages
+ *
+ * @return {array} array of object containing consultant and bonuses
+ */
+export const getPayrollTaxesByMonth = ({ $models, consultants, financialYear, financialMonth }) => {
+  const payrollTaxes = [];
+
+  const permanents = [];
+  const contractors = [];
+  consultants.forEach(c => {
+    switch (c.consultantType) {
+      case '1':
+        permanents.push(c);
+        break;
+      case '2':
+        contractors.push(c);
+        break;
+      default:
+    }
+  });
+
+  const salaries = getConsultantSalariesByMonth({
+    consultants: permanents,
+    financialYear,
+    financialMonth,
+  });
+
+  const wages = getContractorWagesByMonth({
+    $models,
+    consultants: contractors,
+    calendarYear,
+    calendarMonth,
+  });
 };
 
 /**
@@ -795,6 +848,16 @@ const calculateFixPriceRevenues = async ({
 };
 
 /**
+ * Get Payroll Tax of consultants
+ * For permanents and contractors with 'incursPayrollTax' flag on
+ *
+ * @param {object} $models
+ * @param {array of string} profitCentreIds
+ * @return {object} base data
+ */
+const calculatePayrollTax = async ({}) => {};
+
+/**
  * Get general data in preparation for calculations
  *
  * @param {object} $models
@@ -858,7 +921,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
   const forecastElements = await $models.ForecastElement.findAll({
     where: {
       key: {
-        $in: ['TMREV', 'FIXREV', 'CWAGES', 'SAL', 'BON', 'INTCH', 'INTREV'],
+        $in: ['TMREV', 'FIXREV', 'CWAGES', 'SAL', 'PTAX', 'BON', 'INTCH', 'INTREV'],
       },
     },
   });
@@ -903,6 +966,7 @@ export const calculateForecastForProfitCentre = params =>
     calculateBonusProvision(params),
     calculateInternalRates(params),
     calculateFixPriceRevenues(params),
+    calculatePayrollTax(params),
   ]);
 
 /**
