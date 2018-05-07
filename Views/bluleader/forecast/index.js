@@ -1,4 +1,5 @@
 import React from 'react';
+import _ from 'lodash';
 import { styled } from 'bappo-components';
 import ForecastReport from 'forecast-report';
 import {
@@ -31,7 +32,7 @@ class ForecastMatrix extends React.Component {
   async componentDidUpdate(prevProps) {
     if (
       prevProps.financialYear !== this.props.financialYear ||
-      prevProps.profitCentreIds !== this.props.profitCentreIds
+      !_.isEqual(prevProps.profitCentreIds, this.props.profitCentreIds)
     ) {
       this.loadData();
     }
@@ -279,6 +280,7 @@ class ForecastMatrix extends React.Component {
     else {
       switch (element.key) {
         case 'SAL':
+        case 'BON':
         case 'TMREV':
         case 'FIXREV':
         case 'CWAGES':

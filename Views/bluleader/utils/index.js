@@ -7,6 +7,9 @@ export * from './rosterTime';
 
 export const dateFormat = 'YYYY-MM-DD';
 
+// Probabilities that make a project billable
+const billableProbabilities = ['50%', '90%', '100%'];
+
 /**
  * Generate a unique key for a forecast entry in a table.
  *
@@ -44,9 +47,6 @@ export const getForecastEntryKey = (
 
   return `${calendarYear}.${calendarMonth}.${rowIdentifier}`;
 };
-
-// Initialize forecast entries for element 'Contractor Wages'
-const billableProbabilities = ['50%', '90%', '100%'];
 
 /**
  * Determine whether a roster entry incurs contractor wage
@@ -174,6 +174,9 @@ export const getServiceRevenueRosterEntries = async ({
 /**
  * Calculate permanent consultant salaries of a given month
  *
+ * @param {array} consultants within the costCenters
+ * @param {array} financialYear
+ * @param {array} financialMonth
  * @return {array} array of object containing consultant and salary
  */
 export const getConsultantSalariesByMonth = ({ consultants, financialYear, financialMonth }) => {
@@ -211,7 +214,7 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
         }
       }
 
-      const salary = Math.floor(monthlySalary * (validDays / totalDays));
+      const salary = (monthlySalary * (validDays / totalDays)).toFixed(2);
 
       if (salary > 0) {
         consultantSalaries.push({
@@ -223,6 +226,26 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
   }
 
   return consultantSalaries;
+};
+
+/**
+ * Calculate permanent consultant bonuses of a given month
+ *
+ * @return {array} array of object containing consultant and bonuses
+ */
+export const getConsultantBonusesByMonth = ({ consultants }) => {
+  const consultantBonuses = [];
+
+  for (const consultant of consultants) {
+    if (consultant.consultantType === '1' && +consultant.bonusProvision !== 0) {
+      consultantBonuses.push({
+        consultant,
+        bonus: (+consultant.bonusProvision / 12).toFixed(2),
+      });
+    }
+  }
+
+  return consultantBonuses;
 };
 
 /**
@@ -561,7 +584,7 @@ const calculateConsultantSalaries = async ({
           amount: 0,
         };
       }
-      forecastEntries[key].amount += cs.salary;
+      forecastEntries[key].amount += +cs.salary;
     });
   }
 
@@ -573,9 +596,64 @@ const calculateConsultantSalaries = async ({
       profitCentre_id,
     },
   });
-  await $models.ForecastEntry.bulkCreate(Object.values(forecastEntries));
+
+  const newEntries = Object.values(forecastEntries);
+  if (newEntries.length > 0) await $models.ForecastEntry.bulkCreate(newEntries);
 };
 
+/**
+ * Calculate forecast entries for element: bonus provision
+ * Only for permanent consultants
+ */
+const calculateBonusProvision = async ({
+  $models,
+  financialYear,
+  forecastElements,
+  profitCentre_id,
+  consultants,
+}) => {
+  const bonusElementId = forecastElements.find(e => e.key === 'BON').id;
+  const forecastEntries = {};
+
+  for (let i = 1; i < 13; i++) {
+    const consultantBonuses = getConsultantBonusesByMonth({
+      consultants,
+      financialYear,
+      financialMonth: i,
+    });
+
+    const key = getForecastEntryKey(financialYear, i, bonusElementId, true);
+
+    consultantBonuses.forEach(cb => {
+      if (!forecastEntries[key]) {
+        forecastEntries[key] = {
+          financialYear,
+          financialMonth: i,
+          forecastElement_id: bonusElementId,
+          profitCentre_id,
+          amount: 0,
+        };
+      }
+      forecastEntries[key].amount += +cb.bonus;
+    });
+  }
+
+  // Remove previous forecast entries and create new
+  await $models.ForecastEntry.destroy({
+    where: {
+      financialYear: financialYear.toString(),
+      forecastElement_id: bonusElementId,
+      profitCentre_id,
+    },
+  });
+
+  const newEntries = Object.values(forecastEntries);
+  if (newEntries.length > 0) await $models.ForecastEntry.bulkCreate(newEntries);
+};
+
+/**
+ * Calculate forecast entries for two elements: internal revenue and internal charge
+ */
 const calculateInternalRates = async ({
   $models,
   costCenters,
@@ -663,7 +741,7 @@ const calculateInternalRates = async ({
 };
 
 /**
- * Get fix price project revenues
+ * Get fix price project revenues from project forecast
  *
  * @param {object} $models
  * @param {array of string} profitCentreIds
@@ -780,7 +858,7 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
   const forecastElements = await $models.ForecastElement.findAll({
     where: {
       key: {
-        $in: ['TMREV', 'FIXREV', 'CWAGES', 'SAL', 'INTCH', 'INTREV'],
+        $in: ['TMREV', 'FIXREV', 'CWAGES', 'SAL', 'BON', 'INTCH', 'INTREV'],
       },
     },
   });
@@ -822,6 +900,7 @@ export const calculateForecastForProfitCentre = params =>
     calculateServiceRevenue(params),
     calculateContractorWages(params),
     calculateConsultantSalaries(params),
+    calculateBonusProvision(params),
     calculateInternalRates(params),
     calculateFixPriceRevenues(params),
   ]);

@@ -6,6 +6,7 @@ import {
   getWageRosterEntries,
   getServiceRevenueRosterEntries,
   getConsultantSalariesByMonth,
+  getConsultantBonusesByMonth,
   getInternalRevenue,
   getInternalCharge,
   getFixPriceRevenues,
@@ -18,10 +19,13 @@ const consultantForecastElements = [
     key: 'TMREV',
     name: 'Service Revenue',
   },
-
   {
     key: 'SAL',
     name: 'Consultant Salaries',
+  },
+  {
+    key: 'BON',
+    name: 'Bonus Provision',
   },
   {
     key: 'CWAGES',
@@ -139,6 +143,21 @@ class ForecastReport extends React.Component {
             consultantSalaries.forEach(({ consultant, salary }) => {
               const key = getTableKey(consultant.name, 'Consultant Salaries');
               consultantEntries[key] = salary;
+            });
+            break;
+          }
+          case 'BON': {
+            if (!showTables.includes('consultant')) showTables.push('consultant');
+            // Consultant bonus provision
+            const consultantBonuses = getConsultantBonusesByMonth({
+              consultants,
+              financialYear,
+              financialMonth,
+            });
+
+            consultantBonuses.forEach(({ consultant, bonus }) => {
+              const key = getTableKey(consultant.name, 'Bonus Provision');
+              consultantEntries[key] = bonus;
             });
             break;
           }
