@@ -67,7 +67,7 @@ class Dummy extends React.Component {
 
     let n;
     const a = [];
-    for (n = 1; n < 20; n++) {
+    for (n = 1; n < 400; n++) {
       a.push({ ...consultant, name: `Consultant ${n}` });
     }
 
@@ -111,25 +111,26 @@ class Dummy extends React.Component {
     const projects = await Project.findAll({});
     const project_id = projects[0].id;
 
-    const e = [];
+    const promises = [];
+
     for (const c of consultants) {
       // book this consultant for multiple days
+      const e = [];
       for (let i = 0; i <= 365; i++) {
         const date = moment()
           .add(i, 'days')
           .format('YYYY-MM-DD');
         e.push({ consultant_id: c.id, project_id, probability: '1', date });
       }
+      promises.push(this.props.$models.RosterEntry.bulkCreate(e));
     }
 
     try {
-      await this.props.$models.RosterEntry.bulkCreate(e);
-      console.log('created roster entries');
+      await Promise.all(promises);
+      alert('finished');
     } catch (err) {
       console.log(err);
     }
-
-    alert('finished');
   };
 
   render() {

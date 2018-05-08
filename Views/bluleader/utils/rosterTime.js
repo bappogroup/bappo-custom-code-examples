@@ -2,7 +2,7 @@ import moment from 'moment';
 
 export const getMonday = (date = moment()) => moment(date).day(1);
 
-export const daysDisplayed = 28;
+export const daysDisplayed = 84;
 const dateFormat = 'YYYY-MM-DD';
 
 export const datesToArray = (from, to) => {

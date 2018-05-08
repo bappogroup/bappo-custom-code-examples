@@ -32,6 +32,10 @@ class Roster extends React.Component {
     }
   }
 
+  consultantKeyExtractor = (item, index) => `consultant_${item.id}_${index}`;
+
+  rosterKeyExtractor = (item, index) => `entry_${item.id}_${index}`;
+
   // Bring up a popup asking which cost centre and start time
   setFilters = async () => {
     const { $models, $popup } = this.props;
@@ -85,7 +89,7 @@ class Roster extends React.Component {
 
   loadData = async () => {
     const { costCenter, startDate } = this.state;
-    const { Consultant, RosterEntry } = this.props.$models;
+    const { Consultant, RosterEntry, ProjectAssignment } = this.props.$models;
 
     const consultantQuery = {
       active: true,
@@ -97,6 +101,16 @@ class Roster extends React.Component {
       limit: 10000,
       where: consultantQuery,
       include: [],
+    });
+
+    const projectAssignments = await ProjectAssignment.findAll({
+      where: {
+        consultant_id: {
+          $in: consultants.map(c => c.id),
+        },
+      },
+      include: [{ as: 'project' }],
+      limit: 10000,
     });
 
     const entries = await RosterEntry.findAll({
@@ -117,16 +131,16 @@ class Roster extends React.Component {
       limit: 100000,
     });
 
-    const map1 = {};
+    const rosterEntryMap = {};
     for (const entry of entries) {
-      map1[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
+      rosterEntryMap[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
     }
 
     this.setState({
       loading: false,
       consultants,
-      map1,
-      // probability,
+      rosterEntryMap,
+      projectAssignments,
     });
   };
 
@@ -151,31 +165,25 @@ class Roster extends React.Component {
     });
 
     this.setState(state => {
-      const { map1 } = state;
+      const { rosterEntryMap } = state;
       for (const entry of entries) {
-        map1[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
+        rosterEntryMap[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
       }
       return {
         ...state,
-        map1,
+        rosterEntryMap,
         loading: false,
       };
     });
   };
 
   openEntryForm = async (entry, consultant) => {
-    const projectAssignments = await this.props.$models.ProjectAssignment.findAll({
-      where: {
-        consultant_id: consultant.id,
-      },
-      include: [{ as: 'project' }],
-      limit: 1000,
-    });
-
-    const projectOptions = projectAssignments.map(pa => ({
-      id: pa.project_id,
-      label: pa.project.name,
-    }));
+    const projectOptions = this.state.projectAssignments
+      .filter(pa => pa.consultant_id === consultant.id)
+      .map(pa => ({
+        id: pa.project_id,
+        label: pa.project.name,
+      }));
 
     this.props.$popup.form({
       objectKey: 'RosterEntry',
@@ -310,7 +318,7 @@ class Roster extends React.Component {
   renderCell = (consultant, date) => {
     const dateFormatted = date.format('YYYY-MM-DD');
     const key = `${consultant.id}-${dateFormatted}`;
-    const entry = this.state.map1[key] || {
+    const entry = this.state.rosterEntryMap[key] || {
       date: dateFormatted,
       consultant_id: consultant.id,
     };
@@ -324,7 +332,11 @@ class Roster extends React.Component {
     if (projectName) projectName = truncString(projectName);
 
     return (
-      <Cell onPress={() => this.openEntryForm(entry, consultant)} backgroundColor={backgroundColor}>
+      <Cell
+        onPress={() => this.openEntryForm(entry, consultant)}
+        backgroundColor={backgroundColor}
+        key={key}
+      >
         <CellText>{projectName}</CellText>
       </Cell>
     );
@@ -332,6 +344,7 @@ class Roster extends React.Component {
 
   renderConsultantLabel = data => {
     const { index, item } = data;
+
     if (index === 0) return <HeaderLabel />;
 
     return (
@@ -341,7 +354,7 @@ class Roster extends React.Component {
     );
   };
 
-  renderEntries = data => {
+  renderEntryRow = data => {
     const { index, item } = data;
     const dates = datesToArrayByStart(this.state.startDate);
 
@@ -374,7 +387,7 @@ class Roster extends React.Component {
       return <ActivityIndicator style={{ flex: 1 }} />;
     }
 
-    const consultantsWithHeader = [{ id: 'header' }].concat(consultants);
+    const consultantsWithHeader = [{ id: 'header' }].concat(consultants).slice(0, 100);
 
     return (
       <Container>
@@ -383,10 +396,22 @@ class Roster extends React.Component {
           <TextButton onPress={this.setFilters}>change</TextButton>
         </HeaderContainer>
         <ListContainer>
-          <ConsultantList data={consultantsWithHeader} renderItem={this.renderConsultantLabel} />
+          <ConsultantList
+            data={consultantsWithHeader}
+            renderItem={this.renderConsultantLabel}
+            initialNumToRender={5}
+            keyExtractor={this.consultantKeyExtractor}
+            getItemLayout={(_data, index) => ({
+              length: 34,
+              offset: 34 * index,
+              index,
+            })}
+          />
           <EntryList
             data={consultantsWithHeader}
-            renderItem={this.renderEntries}
+            renderItem={this.renderEntryRow}
+            initialNumToRender={5}
+            keyExtractor={this.rosterKeyExtractor}
             getItemLayout={(_data, index) => ({
               length: 34,
               offset: 34 * index,
@@ -403,6 +428,7 @@ export default Roster;
 
 const Container = styled(View)`
   flex: 1;
+  flex-direction: column;
 `;
 
 const HeaderContainer = styled(View)`
