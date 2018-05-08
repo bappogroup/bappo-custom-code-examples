@@ -1,5 +1,4 @@
 import React from 'react';
-import moment from 'moment';
 import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
 import { dateFormat, getMonday, datesToArray } from 'utils';
 
@@ -12,20 +11,31 @@ function truncString(str, max = 18, add = '...') {
 
 class SingleRoster extends React.Component {
   state = {
+    error: null,
+    consultant: null,
     startDate: getMonday(),
+    weeklyEntries: [], // Array of array, containing entries of each week
     endDate: null,
     loading: true,
-    weeklyEntries: [], // Array of array, containing entries of each week
-    consultant: this.props.consultant,
-    projectOptions: this.props.projectOptions,
   };
 
-  componentDidMount() {
-    this.loadRosterEntries();
+  async componentDidMount() {
+    const { $models } = this.props;
+    const consultant = (await $models.Consultant.findAll({
+      where: {
+        user_id: this.props.$global.currentUser.id,
+      },
+    }))[0];
+
+    if (!consultant) {
+      this.setState({ error: 'You are not linked to a consultant. Please contact your manager.' });
+    } else {
+      this.setState({ consultant }, () => this.loadRosterEntries());
+    }
   }
 
   loadRosterEntries = async extraWeeks => {
-    const { startDate, consultant } = this.state;
+    const { consultant, startDate } = this.state;
     this.setState({ loading: true });
 
     // Fetch entries: 12 weeks from today
@@ -84,126 +94,6 @@ class SingleRoster extends React.Component {
     });
   };
 
-  openEntryForm = entry => {
-    this.props.$popup.form({
-      objectKey: 'RosterEntry',
-      fields: [
-        'name',
-        {
-          name: 'project_id',
-          label: 'Project',
-          type: 'FixedList',
-          properties: {
-            options: this.state.projectOptions,
-          },
-          validate: [value => (value ? undefined : 'Required')],
-        },
-        {
-          path: 'date',
-          name: 'startDate',
-          label: 'From',
-        },
-        {
-          path: 'date',
-          name: 'endDate',
-          label: 'Until',
-        },
-        {
-          name: 'mon',
-          type: 'Checkbox',
-          label: 'Monday',
-        },
-        {
-          name: 'tue',
-          type: 'Checkbox',
-          label: 'Tuesday',
-        },
-        {
-          name: 'wed',
-          type: 'Checkbox',
-          label: 'Wednesday',
-        },
-        {
-          name: 'thu',
-          type: 'Checkbox',
-          label: 'Thursday',
-        },
-        {
-          name: 'fri',
-          type: 'Checkbox',
-          label: 'Friday',
-        },
-        {
-          name: 'sat',
-          type: 'Checkbox',
-          label: 'Saturday',
-        },
-        {
-          name: 'sun',
-          type: 'Checkbox',
-          label: 'Sunday',
-        },
-        'probability_id',
-      ],
-      title: `${entry.date}`,
-      initialValues: {
-        ...entry,
-        startDate: entry.date,
-        endDate: entry.date,
-        mon: true,
-        tue: true,
-        wed: true,
-        thu: true,
-        fri: true,
-        sat: false,
-        sun: false,
-      },
-      onSubmit: this.updateRosterEntry,
-    });
-  };
-
-  updateRosterEntry = async entry => {
-    const { RosterEntry } = this.props.$models;
-
-    // Generate new entries
-    const newEntries = [];
-    for (
-      let d = moment(entry.startDate).clone();
-      d.isSameOrBefore(moment(entry.endDate));
-      d.add(1, 'day')
-    ) {
-      const weekDayName = d.format('ddd').toLowerCase();
-      if (entry[weekDayName]) {
-        // Only pick chosen weekdays
-        newEntries.push({
-          date: d.format('YYYY-MM-DD'),
-          consultant_id: this.props.consultant.id,
-          project_id: entry.project_id,
-          probability_id: entry.probability_id,
-        });
-      }
-    }
-
-    if (newEntries.length === 0) return;
-
-    await RosterEntry.destroy({
-      where: {
-        consultant_id: this.props.consultant.id,
-        date: {
-          $in: newEntries.map(e => e.date),
-        },
-      },
-    });
-
-    await RosterEntry.bulkCreate(newEntries);
-    await this.loadRosterEntries();
-  };
-
-  handleClose = () => {
-    this.props.$popup.close();
-    this.props.onClose(this.state.consultant.id);
-  };
-
   renderRow = ({ item }) => {
     if (!item.length) return null;
 
@@ -216,24 +106,22 @@ class SingleRoster extends React.Component {
   };
 
   renderCell = entry => {
-    let backgroundColor = '#f8f8f8';
-    if (entry && entry.probability) {
-      backgroundColor = entry.probability.backgroundColor;
-    }
-
     let projectName = entry && entry.project && entry.project.name;
 
     if (projectName) projectName = truncString(projectName);
 
     return (
-      <Cell onPress={() => this.openEntryForm(entry)} backgroundColor={backgroundColor}>
+      <Cell onPress={() => this.openEntryForm(entry)}>
         <CellText>{projectName}</CellText>
       </Cell>
     );
   };
 
   render() {
-    const { loading, consultant, weeklyEntries } = this.state;
+    const { loading, consultant, weeklyEntries, error } = this.state;
+
+    if (error) return <Title>{error}</Title>;
+
     if (!consultant) {
       if (loading) return <ActivityIndicator style={{ flex: 1 }} />;
       return <Title>No consultant specified.</Title>;
@@ -241,7 +129,6 @@ class SingleRoster extends React.Component {
 
     return (
       <Container>
-        <CloseButton onPress={this.handleClose}>X</CloseButton>
         <Title>{consultant.name}'s Roster</Title>
         <HeaderRow>{weekdays.map(d => <HeaderCell>{d}</HeaderCell>)}</HeaderRow>
         <LoadButton onPress={() => this.loadRosterEntries(-4)}>Load previous</LoadButton>
@@ -257,12 +144,6 @@ export default SingleRoster;
 const Container = styled(View)`
   flex: 1;
   margin-right: 20px;
-`;
-
-const CloseButton = styled(Button)`
-  font-size: 18px;
-  margin: 15px;
-  color: gray;
 `;
 
 const Title = styled(Text)`
@@ -301,14 +182,14 @@ const cellStyle = `
 `;
 
 const HeaderCell = styled(Text)`
-  ${cellStyle};
   text-align: center;
   align-self: center;
+  ${cellStyle};
 `;
 
 const Cell = styled(Button)`
-  ${cellStyle} border: 1px solid #eee;
-  background-color: ${props => props.backgroundColor};
+  border: 1px solid #eee;
+  ${cellStyle};
 `;
 
 const CellText = styled(Text)`

@@ -300,9 +300,17 @@ class Roster extends React.Component {
   };
 
   handleClickConsultant = consultant => {
+    const projectOptions = this.state.projectAssignments
+      .filter(pa => pa.consultant_id === consultant.id)
+      .map(pa => ({
+        id: pa.project_id,
+        label: pa.project.name,
+      }));
+
     this.props.$popup.open(
       <SingleRoster
-        consultant_id={consultant.id}
+        consultant={consultant}
+        projectOptions={projectOptions}
         {...this.props}
         onClose={this.reloadConsultantData}
       />,
