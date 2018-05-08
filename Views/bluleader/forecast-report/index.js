@@ -7,6 +7,7 @@ import {
   getServiceRevenueRosterEntries,
   getConsultantSalariesByMonth,
   getConsultantBonusesByMonth,
+  getPayrollTaxesByMonth,
   getInternalRevenue,
   getInternalCharge,
   getFixPriceRevenues,
@@ -123,8 +124,8 @@ class ForecastReport extends React.Component {
             // Contractor wages
             const promise = getContractorWagesByMonth({
               $models,
-              calendarYear,
-              calendarMonth,
+              financialYear,
+              financialMonth,
               consultants,
             }).then(wages => {
               wages.forEach(({ consultant, wage }) => {
@@ -167,12 +168,19 @@ class ForecastReport extends React.Component {
           case 'PTAX': {
             if (!showTables.includes('consultant')) showTables.push('consultant');
             // Payroll Tax
-            const payrollTaxes = getPayrollTaxesByMonth({
+            const promise = getPayrollTaxesByMonth({
               $models,
               consultants,
               financialYear,
               financialMonth,
+            }).then(payrollTaxes => {
+              payrollTaxes.forEach(({ consultant, payrollTax }) => {
+                const key = getTableKey(consultant.name, 'Payroll Tax');
+                consultantEntries[key] = payrollTax;
+              });
             });
+            promises.push(promise);
+            break;
           }
           case 'TMREV': {
             if (!showTables.includes('consultant')) showTables.push('consultant');
@@ -281,7 +289,7 @@ class ForecastReport extends React.Component {
         let total = 0;
         consultants.concat(externalConsultants).forEach(({ name }) => {
           const key = getTableKey(name, element.name);
-          if (consultantEntries[key]) total += consultantEntries[key];
+          if (consultantEntries[key]) total += +consultantEntries[key];
         });
 
         consultantTotals[element.name] = total;
@@ -293,7 +301,7 @@ class ForecastReport extends React.Component {
 
         fixProjects.forEach(({ name }) => {
           const key = getTableKey(name, element.name);
-          if (projectEntries[key]) total += projectEntries[key];
+          if (projectEntries[key]) total += +projectEntries[key];
         });
         projectTotals[element.name] = total;
       });

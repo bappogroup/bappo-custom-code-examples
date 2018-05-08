@@ -1,6 +1,7 @@
 import moment from 'moment';
 
 export const fiscalOffset = -6;
+const dateFormat = 'YYYY-MM-DD';
 
 export const monthFinancialToCalendar = (financialMonth, offset = fiscalOffset) => {
   let calendarMonth = +financialMonth + offset;
@@ -50,6 +51,13 @@ export const getFinancialTimeFromDate = (date = moment(), offset = fiscalOffset)
   };
 };
 
+export const financialToMoment = ({ financialYear, financialMonth }, offset = fiscalOffset) => {
+  return moment({
+    year: financialYear,
+    month: financialMonth - 1,
+  }).add(-offset, 'months');
+};
+
 /**
  * Convert financial year and month to calendar
  * e.g. { financialYear: 2018, financialMonth: 1 } becomes { calendarYear: 2018, calendarMonth: 7 }
@@ -59,16 +67,19 @@ export const getFinancialTimeFromDate = (date = moment(), offset = fiscalOffset)
  * @param {number} offset - how many months between calendar and financial month
  * @return {object} calendar time object
  */
-export const financialToCalendar = ({ financialYear, financialMonth }, offset = fiscalOffset) => {
-  const calendarDate = moment({
-    year: financialYear,
-    month: financialMonth - 1,
-  }).add(-offset, 'months');
+export const financialToCalendar = ({ financialYear, financialMonth }) => {
+  const calendarDate = financialToMoment({ financialYear, financialMonth });
 
   return {
     calendarYear: calendarDate.year(),
     calendarMonth: calendarDate.month() + 1,
   };
+};
+
+export const financialToDate = ({ financialYear, financialMonth }) => {
+  const calendarDate = financialToMoment({ financialYear, financialMonth });
+
+  return calendarDate.format(dateFormat);
 };
 
 /**

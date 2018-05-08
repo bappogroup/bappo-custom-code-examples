@@ -7,8 +7,8 @@ export * from './rosterTime';
 
 export const dateFormat = 'YYYY-MM-DD';
 
-// Probabilities that make a project billable
 const billableProbabilities = ['50%', '90%', '100%'];
+const payrollTaxRate = 0.06;
 
 /**
  * Generate a unique key for a forecast entry in a table.
@@ -81,11 +81,16 @@ const rosterEntryIncursContractorWages = rosterEntry => {
  */
 export const getContractorWagesByMonth = async ({
   $models,
-  calendarYear,
-  calendarMonth,
+  financialYear,
+  financialMonth,
   consultants,
 }) => {
-  if (!(calendarYear && calendarMonth)) return [];
+  if (!(financialYear && financialMonth)) return [];
+
+  const { calendarYear, calendarMonth } = time.financialToCalendar({
+    financialYear,
+    financialMonth,
+  });
 
   const contractors = consultants.filter(c => c.consultantType === '2');
   const contractorWages = {};
@@ -244,15 +249,30 @@ export const getConsultantSalariesByMonth = ({ consultants, financialYear, finan
 };
 
 /**
- * Calculate permanent consultant bonuses of a given month
+ * Calculate bonuses of a given month
+ * Conditions for the consultant:
+ * 1. is permanent
+ * 2. has bonusProvision
+ * 3. startDate - endDate includes this month
  *
  * @return {array} array of object containing consultant and bonuses
  */
-export const getConsultantBonusesByMonth = ({ consultants }) => {
+export const getConsultantBonusesByMonth = ({ consultants, financialYear, financialMonth }) => {
   const consultantBonuses = [];
+  const thisMonth = time.financialToMoment({
+    financialYear,
+    financialMonth,
+  });
 
   for (const consultant of consultants) {
-    if (consultant.consultantType === '1' && +consultant.bonusProvision !== 0) {
+    const { startDate, endDate } = consultant;
+    // console.log(thisMonth.format(dateFormat), )
+    if (
+      consultant.consultantType === '1' &&
+      +consultant.bonusProvision !== 0 &&
+      thisMonth.isSameOrAfter(moment(startDate)) &&
+      (!endDate || thisMonth.isSameOrBefore(moment(endDate)))
+    ) {
       consultantBonuses.push({
         consultant,
         bonus: (+consultant.bonusProvision / 12).toFixed(2),
@@ -268,9 +288,15 @@ export const getConsultantBonusesByMonth = ({ consultants }) => {
  * For permanents: 6% of salary
  * For contractors that has incursPayrollTax flag on: 6% of wages
  *
- * @return {array} array of object containing consultant and bonuses
+ * @return {array} array of object containing consultant and payrollTax
  */
-export const getPayrollTaxesByMonth = ({ $models, consultants, financialYear, financialMonth }) => {
+
+export const getPayrollTaxesByMonth = async ({
+  $models,
+  consultants,
+  financialYear,
+  financialMonth,
+}) => {
   const payrollTaxes = [];
 
   const permanents = [];
@@ -293,12 +319,32 @@ export const getPayrollTaxesByMonth = ({ $models, consultants, financialYear, fi
     financialMonth,
   });
 
-  const wages = getContractorWagesByMonth({
+  salaries.forEach(({ consultant, salary }) => {
+    const payrollTax = (+salary * payrollTaxRate).toFixed(2);
+    payrollTaxes.push({
+      consultant,
+      payrollTax,
+    });
+  });
+
+  const wages = await getContractorWagesByMonth({
     $models,
     consultants: contractors,
-    calendarYear,
-    calendarMonth,
+    financialYear,
+    financialMonth,
   });
+
+  wages.forEach(({ consultant, wage }) => {
+    if (consultant.incursPayrollTax) {
+      const payrollTax = (+wage * payrollTaxRate).toFixed(2);
+      payrollTaxes.push({
+        consultant,
+        payrollTax,
+      });
+    }
+  });
+
+  return payrollTaxes;
 };
 
 /**
@@ -529,8 +575,10 @@ const calculateServiceRevenue = async ({
 /**
  * Calculate and update 'Contractor Wages' row in a financial year, of a profit centre, by:
  * accumulating consultant daily rates from roster entries that incur contractor wages
+ *
+ * @returns {array} payroll tax forecast entries of these wages
  */
-const calculateContractorWages = async ({
+const calculateContractorWagesAndTax = async ({
   $models,
   financialYear,
   forecastElements,
@@ -538,10 +586,14 @@ const calculateContractorWages = async ({
   consultants,
 }) => {
   const { RosterEntry, ForecastEntry } = $models;
-  const forecastEntries = {};
-  const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
 
-  if (!(consultants.length && contractorWagesElementId)) return;
+  const wageEntriesMap = {};
+  const taxEntriesMap = {};
+
+  const contractorWagesElementId = forecastElements.find(e => e.key === 'CWAGES').id;
+  const payrollTaxElementId = forecastElements.find(e => e.key === 'PTAX').id;
+
+  if (!(consultants.length && contractorWagesElementId)) return [];
 
   const consultantIds = consultants.map(c => c.id);
 
@@ -570,7 +622,7 @@ const calculateContractorWages = async ({
     const { financialMonth } = time.getFinancialTimeFromDate(rosterEntry.date);
 
     if (rosterEntryIncursContractorWages(rosterEntry)) {
-      const { dailyRate } = rosterEntry.consultant;
+      const { dailyRate, incursPayrollTax } = rosterEntry.consultant;
 
       const contractorWagesKey = getForecastEntryKey(
         financialYear,
@@ -579,8 +631,8 @@ const calculateContractorWages = async ({
         true,
       );
 
-      if (!forecastEntries[contractorWagesKey]) {
-        forecastEntries[contractorWagesKey] = {
+      if (!wageEntriesMap[contractorWagesKey]) {
+        wageEntriesMap[contractorWagesKey] = {
           financialYear,
           financialMonth,
           profitCentre_id,
@@ -588,9 +640,31 @@ const calculateContractorWages = async ({
           amount: 0,
         };
       }
-      forecastEntries[contractorWagesKey].amount += +dailyRate;
+      wageEntriesMap[contractorWagesKey].amount += +dailyRate;
+
+      // Payroll Tax
+      if (incursPayrollTax) {
+        const payrollTaxKey = getForecastEntryKey(
+          financialYear,
+          financialMonth,
+          payrollTaxElementId,
+          true,
+        );
+
+        if (!taxEntriesMap[payrollTaxKey]) {
+          taxEntriesMap[payrollTaxKey] = {
+            financialYear,
+            financialMonth,
+            profitCentre_id,
+            forecastElement_id: payrollTaxElementId,
+            amount: 0,
+          };
+        }
+        taxEntriesMap[payrollTaxKey].amount += +dailyRate * payrollTaxRate;
+      }
     }
   }
+  const newWageForecastEntries = Object.values(wageEntriesMap);
 
   // Remove previous forecast entries and create new
   await ForecastEntry.destroy({
@@ -600,12 +674,16 @@ const calculateContractorWages = async ({
       profitCentre_id,
     },
   });
-  await ForecastEntry.bulkCreate(Object.values(forecastEntries));
+  if (newWageForecastEntries.length > 0) await ForecastEntry.bulkCreate(newWageForecastEntries);
+
+  return Object.values(taxEntriesMap);
 };
 
 /**
  * Calculate permanent consultant salaries in a financial year
  * Update forecast entries
+ *
+ * @returns {array} payroll tax forecast entries of these salaries
  */
 const calculateConsultantSalaries = async ({
   $models,
@@ -615,7 +693,8 @@ const calculateConsultantSalaries = async ({
   consultants,
 }) => {
   const salaryElementId = forecastElements.find(e => e.key === 'SAL').id;
-  const forecastEntries = {};
+  const payrollTaxElementId = forecastElements.find(e => e.key === 'PTAX').id;
+  const salaryEntriesMap = {};
 
   // Calculate forecast entries by adding up monthly salaris by cost centers
   for (let i = 1; i < 13; i++) {
@@ -628,8 +707,8 @@ const calculateConsultantSalaries = async ({
     const key = getForecastEntryKey(financialYear, i, salaryElementId, true);
 
     consultantSalaries.forEach(cs => {
-      if (!forecastEntries[key]) {
-        forecastEntries[key] = {
+      if (!salaryEntriesMap[key]) {
+        salaryEntriesMap[key] = {
           financialYear,
           financialMonth: i,
           forecastElement_id: salaryElementId,
@@ -637,7 +716,7 @@ const calculateConsultantSalaries = async ({
           amount: 0,
         };
       }
-      forecastEntries[key].amount += +cs.salary;
+      salaryEntriesMap[key].amount += +cs.salary;
     });
   }
 
@@ -650,8 +729,18 @@ const calculateConsultantSalaries = async ({
     },
   });
 
-  const newEntries = Object.values(forecastEntries);
-  if (newEntries.length > 0) await $models.ForecastEntry.bulkCreate(newEntries);
+  const newSalaryEntries = Object.values(salaryEntriesMap);
+  if (newSalaryEntries.length > 0) await $models.ForecastEntry.bulkCreate(newSalaryEntries);
+
+  const taxeEntries = newSalaryEntries.map(entry => ({
+    financialYear,
+    financialMonth: entry.financialMonth,
+    forecastElement_id: payrollTaxElementId,
+    profitCentre_id,
+    amount: payrollTaxRate * +entry.amount,
+  }));
+
+  return taxeEntries;
 };
 
 /**
@@ -848,16 +937,6 @@ const calculateFixPriceRevenues = async ({
 };
 
 /**
- * Get Payroll Tax of consultants
- * For permanents and contractors with 'incursPayrollTax' flag on
- *
- * @param {object} $models
- * @param {array of string} profitCentreIds
- * @return {object} base data
- */
-const calculatePayrollTax = async ({}) => {};
-
-/**
  * Get general data in preparation for calculations
  *
  * @param {object} $models
@@ -938,6 +1017,40 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
 };
 
 /**
+ * Calculate and update Payroll Tax forecast entries
+ * For permanents and contractors with 'incursPayrollTax' flag on
+ *
+ * @param {string} payrollTax Element id
+ * @param {array of object} contractor tax entries
+ * @param {array of object} permanent tax entries
+ */
+const calculatePayrollTax = async (
+  { $models, forecastElements, profitCentre_id, financialYear },
+  contractorTaxEntries,
+  permanentTaxEntries,
+) => {
+  const payrollTaxElementId = forecastElements.find(e => e.key === 'PTAX').id;
+  const entriesMap = {};
+
+  [...contractorTaxEntries, ...permanentTaxEntries].forEach(entry => {
+    const key = getForecastEntryKey(financialYear, entry.financialMonth, payrollTaxElementId, true);
+    if (!entriesMap[key]) entriesMap[key] = entry;
+    else entriesMap[key].amount += +entry.amount;
+  });
+
+  const taxEntries = Object.values(entriesMap);
+
+  await $models.ForecastEntry.destroy({
+    where: {
+      financialYear: financialYear.toString(),
+      forecastElement_id: payrollTaxElementId,
+      profitCentre_id,
+    },
+  });
+  if (taxEntries.length > 0) await $models.ForecastEntry.bulkCreate(taxEntries);
+};
+
+/**
  * Calculate following forecast elements for a profit centre:
  *  - 'Service Revenue'
  *  - 'Fix Price Services'
@@ -958,16 +1071,18 @@ export const calculateBaseData = async ({ $models, profitCentreIds }) => {
  * @param {object} projectAssignmentLookup
  * @return {Promise}
  */
-export const calculateForecastForProfitCentre = params =>
-  Promise.all([
-    calculateServiceRevenue(params),
-    calculateContractorWages(params),
+export const calculateForecastForProfitCentre = async params => {
+  const [contractorTaxEntries, permanentTaxEntries] = await Promise.all([
+    calculateContractorWagesAndTax(params),
     calculateConsultantSalaries(params),
+    calculateServiceRevenue(params),
     calculateBonusProvision(params),
     calculateInternalRates(params),
     calculateFixPriceRevenues(params),
-    calculatePayrollTax(params),
   ]);
+
+  await calculatePayrollTax(params, contractorTaxEntries, permanentTaxEntries);
+};
 
 /**
  * Similar to above, but gets profitCentreIds instead of single profitCentre_id
