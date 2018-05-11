@@ -1,13 +1,21 @@
 import React from 'react';
 import moment from 'moment';
-import { ActivityIndicator, FlatList, View, Text, Button, styled } from 'bappo-components';
+import { InfiniteLoader, Table, Column } from 'react-virtualized';
+import { ActivityIndicator, View, Text, Button, styled } from 'bappo-components';
 import { setUserPreferences, getUserPreferences } from 'userpreferences';
-import { dateFormat, getMonday, daysDisplayed, datesToArrayByStart, datesEqual } from 'utils';
+import { dateFormat, getMonday, datesToArrayByStart, datesEqual } from 'utils';
 import SingleRoster from './SingleRoster';
 
 function truncString(str, max = 5, add = '...') {
   return typeof str === 'string' && str.length > max ? str.substring(0, max) + add : str;
 }
+
+const remoteRowCount = 100;
+
+// const getKey = (consultantId, date) => {
+//   const dateString = typeof date === 'string' ? date : date.toString();
+//   return `${consultantId}_${dateString}`;
+// };
 
 class Roster extends React.Component {
   state = {
@@ -15,8 +23,8 @@ class Roster extends React.Component {
     startDate: getMonday(),
     loading: true,
     consultants: [],
-    rosterEntryMap: {},
-    projectAssignments: {},
+
+    entriesByDate: [],
   };
 
   async componentDidMount() {
@@ -237,8 +245,8 @@ class Roster extends React.Component {
     await this.loadData();
   };
 
-  loadData = async () => {
-    const { costCenter, startDate } = this.state;
+  loadData = async (startDate, endDate) => {
+    const { costCenter } = this.state;
     const { Consultant, RosterEntry, ProjectAssignment } = this.props.$models;
 
     const consultantQuery = {
@@ -248,7 +256,7 @@ class Roster extends React.Component {
     if (costCenter) consultantQuery.costCenter_id = costCenter.id;
 
     const consultants = await Consultant.findAll({
-      limit: 50,
+      limit: 5,
       where: consultantQuery,
       include: [],
     });
@@ -263,30 +271,25 @@ class Roster extends React.Component {
       limit: 10000,
     });
 
-    const entries = await RosterEntry.findAll({
+    const rosterEntries = await RosterEntry.findAll({
       where: {
         date: {
-          $between: [
-            moment(startDate).format(dateFormat),
-            moment(startDate)
-              .add(daysDisplayed, 'day')
-              .format(dateFormat),
-          ],
+          $between: [moment(startDate).format(dateFormat), moment(endDate).format(dateFormat)],
         },
         consultant_id: {
           $in: consultants.map(c => c.id),
         },
       },
-      include: [{ as: 'project' }, { as: 'probability' }],
+      include: [{ as: 'project' }, { as: 'probability' }, { as: 'consultant' }],
       limit: 100000,
     });
 
-    const rosterEntryMap = {};
-    for (const entry of entries) {
-      rosterEntryMap[`${entry.consultant_id}-${entry.date.toString()}`] = entry;
-    }
-
-    consultants.unshift({ id: 'header' });
+    const entriesByDate = [];
+    const tempEntryMap = {};
+    rosterEntries.forEach(entry => {
+      if (!tempEntryMap[entry.date]) tempEntryMap[entry.date] = {};
+      tempEntryMap[entry.date][entry.consultant.name] = entry;
+    });
 
     this.setState({
       loading: false,
@@ -296,9 +299,8 @@ class Roster extends React.Component {
     });
   };
 
-  rosterKeyExtractor = (item, index) => `entry_${item.id}_${index}`;
-
   reloadConsultantData = async consultant_id => {
+    return null;
     this.setState({ loading: true });
     const { startDate } = this.state;
 
@@ -308,7 +310,7 @@ class Roster extends React.Component {
           $between: [
             moment(startDate).format(dateFormat),
             moment(startDate)
-              .add(daysDisplayed, 'day')
+              .add(88, 'day')
               .format(dateFormat),
           ],
         },
@@ -332,7 +334,7 @@ class Roster extends React.Component {
   };
 
   renderCell = (consultant, date) => {
-    const dateFormatted = date.format('YYYY-MM-DD');
+    const dateFormatted = date.format(dateFormat);
     const key = `${consultant.id}-${dateFormatted}`;
     const entry = this.state.rosterEntryMap[key] || {
       date: dateFormatted,
@@ -393,6 +395,24 @@ class Roster extends React.Component {
     );
   };
 
+  /** Start of virtualized methods */
+
+  isRowLoaded = ({ index }) => !!this.state.entriesByDate[index];
+
+  loadMoreRows = ({ startIndex, stopIndex }) => {
+    console.log('load more');
+    // return this.props.
+    return Promise.resolve().then(() => {
+      this.setState(({ entriesByDate }) => {
+        return {
+          entriesByDate: [],
+        };
+      });
+    });
+  };
+
+  /** End of virtualized methods */
+
   render() {
     const { loading, costCenter, consultants } = this.state;
     if (loading) {
@@ -405,13 +425,27 @@ class Roster extends React.Component {
           <Heading>Cost center: {(costCenter && costCenter.name) || 'all'}</Heading>
           <TextButton onPress={this.setFilters}>change</TextButton>
         </HeaderContainer>
-        <StyledList
-          data={consultants}
-          renderItem={this.renderEntryRow}
-          initialNumToRender={5}
-          keyExtractor={this.rosterKeyExtractor}
-          getItemLayout={this.getListItemLayout}
-        />
+        <InfiniteLoader
+          isRowLoaded={this.isRowLoaded}
+          loadMoreRows={this.loadMoreRows}
+          rowCount={remoteRowCount}
+        >
+          {({ onRowsRendered, registerChild }) => (
+            <Table
+              width={300}
+              height={300}
+              headerHeight={30}
+              rowHeight={50}
+              rowCount={remoteRowCount}
+              rowRenderer={this.rowRenderer}
+              onRowsRendered={onRowsRendered}
+              ref={registerChild}
+            >
+              <Column />
+              <Column />
+            </Table>
+          )}
+        </InfiniteLoader>
       </Container>
     );
   }
@@ -437,10 +471,6 @@ const Heading = styled(Text)`
 
 const TextButton = styled(Button)`
   color: grey;
-`;
-
-const StyledList = styled(FlatList)`
-  overflow-x: auto;
 `;
 
 const Row = styled(View)`
