@@ -33,7 +33,6 @@ class Roster extends React.Component {
     const { startDate, endDate } = this.state;
 
     const consultants = await $models.Consultant.findAll();
-    // const rosterEntryLists = consultants.map(c => ([c.name]));
 
     // Insert date array at first
     const dateArray = datesToArray(startDate, endDate).map(date => {
@@ -42,6 +41,8 @@ class Roster extends React.Component {
 
       return {
         formattedDate: date.format(labelFormat),
+        weekday: date.format('ddd'),
+        isWeekend: date.day() === 6 || date.day() === 0,
         date,
       };
     });
@@ -129,29 +130,26 @@ class Roster extends React.Component {
       this.highestRowIndex = rowIndex;
     }
 
-    // if (!entryList[rowIndex]) {
-    //   this.loadData();
-    //   return (
-    //     <div key={key} style={style}>
-    //       {' '}
-    //       ...{' '}
-    //     </div>
-    //   );
-    // }
+    if (!entryList[rowIndex]) this.loadData();
 
     const entry = entryList[rowIndex] && entryList[rowIndex][columnIndex];
+
     let backgroundColor = '#f8f8f8';
 
     if (rowIndex === 0) {
       // Render date label cell
+      let color = 'black';
+      if (entry.isWeekend) color = 'grey';
       return (
-        <Label key={key} style={style} backgroundColor={backgroundColor}>
-          {entry.formattedDate}
+        <Label key={key} style={style} backgroundColor={backgroundColor} color={color}>
+          <div>{entry.weekday}</div>
+          <div>{entry.formattedDate}</div>
         </Label>
       );
     } else if (columnIndex === 0) {
       // Render consultant label cell
-      if (!entry) return null;
+      const consultantName = (entry && entry.name) || this.state.consultants[rowIndex].name;
+
       return (
         <ClickLabel
           key={key}
@@ -159,12 +157,11 @@ class Roster extends React.Component {
           backgroundColor={backgroundColor}
           onClick={() => this.handleClickConsultant(entry)}
         >
-          {entry.name}
+          {consultantName}
         </ClickLabel>
       );
     }
 
-    if (!entry) return <Cell key={key} style={style} />;
     // Render roster entry cell
     if (entry && entry.probability) {
       backgroundColor = entry.probability.backgroundColor;
@@ -415,7 +412,6 @@ class Roster extends React.Component {
   };
 
   reloadConsultantData = async consultant_id => {
-    // this.setState({ loading: true });
     const { startDate, endDate, consultants } = this.state;
 
     const rosterEntries = await this.props.$models.RosterEntry.findAll({
@@ -439,11 +435,14 @@ class Roster extends React.Component {
     });
     newEntriesArr.unshift(consultant);
 
-    this.setState(({ entryList }) => {
-      const newEntryList = entryList.slice();
-      newEntryList[rowIndex + 1] = newEntriesArr;
-      return { entryList: newEntryList, loading: false };
-    });
+    this.setState(
+      ({ entryList }) => {
+        const newEntryList = entryList.slice();
+        newEntryList[rowIndex + 1] = newEntriesArr;
+        return { entryList: newEntryList, loading: false };
+      },
+      () => this.gridRef.recomputeGridSize({ rowIndex }),
+    );
   };
 
   render() {
@@ -457,7 +456,6 @@ class Roster extends React.Component {
         <HeaderContainer>
           <Heading>Cost center: {(costCenter && costCenter.name) || 'all'}</Heading>
           <TextButton onPress={this.setFilters}>change</TextButton>
-          <TextButton onPress={this.loadData}>load more consultants</TextButton>
         </HeaderContainer>
         <AutoSizer>
           {({ height, width }) => (
@@ -517,6 +515,8 @@ const baseStyle = `
 const Label = styled.div`
   ${baseStyle};
   display: flex;
+  flex-direction: column;
+  color: ${props => props.color || 'black'};
 `;
 
 const ClickLabel = styled(Label)`
@@ -529,4 +529,5 @@ const ClickLabel = styled(Label)`
 const Cell = styled(Button)`
   ${baseStyle} border: 1px solid #eee;
   background-color: ${props => props.backgroundColor};
+  ${props => (props.blur ? 'filter: blur(3px); opacity: 0.5;' : '')};
 `;
