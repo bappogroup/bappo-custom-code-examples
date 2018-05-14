@@ -21,12 +21,19 @@ class Roster extends React.Component {
     projectAssignments: {},
     entryList: [],
     consultants: [],
+    consultantCount: 0,
     consultantOffset: 0,
   };
+
+  highestRowIndex = 0;
+  isLoading = false;
 
   async componentDidMount() {
     const { $models, $global } = this.props;
     const { startDate, endDate } = this.state;
+
+    const consultants = await $models.Consultant.findAll();
+    // const rosterEntryLists = consultants.map(c => ([c.name]));
 
     // Insert date array at first
     const dateArray = datesToArray(startDate, endDate).map(date => {
@@ -40,7 +47,11 @@ class Roster extends React.Component {
     });
     dateArray.unshift('');
 
-    await this.setState({ entryList: [dateArray] });
+    await this.setState({
+      entryList: [dateArray],
+      consultants,
+      consultantCount: consultants.length,
+    });
 
     // Load user preferences
     const prefs = await getUserPreferences($global.currentUser.id, $models);
@@ -113,6 +124,21 @@ class Roster extends React.Component {
 
   cellRenderer = ({ columnIndex, key, rowIndex, style }) => {
     const { entryList } = this.state;
+
+    if (rowIndex > this.highestRowIndex) {
+      this.highestRowIndex = rowIndex;
+    }
+
+    // if (!entryList[rowIndex]) {
+    //   this.loadData();
+    //   return (
+    //     <div key={key} style={style}>
+    //       {' '}
+    //       ...{' '}
+    //     </div>
+    //   );
+    // }
+
     const entry = entryList[rowIndex] && entryList[rowIndex][columnIndex];
     let backgroundColor = '#f8f8f8';
 
@@ -125,6 +151,7 @@ class Roster extends React.Component {
       );
     } else if (columnIndex === 0) {
       // Render consultant label cell
+      if (!entry) return null;
       return (
         <ClickLabel
           key={key}
@@ -137,12 +164,12 @@ class Roster extends React.Component {
       );
     }
 
+    if (!entry) return <Cell key={key} style={style} />;
     // Render roster entry cell
     if (entry && entry.probability) {
       backgroundColor = entry.probability.backgroundColor;
     }
-    let projectName = entry && entry.project && entry.project.name;
-    if (projectName) projectName = truncString(projectName);
+    const projectName = entry && entry.project && entry.project.name;
 
     return (
       <Cell
@@ -316,20 +343,19 @@ class Roster extends React.Component {
       projectAssignments,
       entryList,
     } = this.state;
-    const { Consultant, RosterEntry, ProjectAssignment } = this.props.$models;
+    const { RosterEntry, ProjectAssignment } = this.props.$models;
+
+    if (this.isLoading) return;
+    this.isLoading = true;
 
     const consultantQuery = {
       active: true,
     };
+    const newConsultantOffset = consultantOffset + 10;
 
     if (costCenter) consultantQuery.costCenter_id = costCenter.id;
 
-    const newConsultants = await Consultant.findAll({
-      limit: 10,
-      where: consultantQuery,
-      include: [],
-      offset: consultantOffset,
-    });
+    const newConsultants = consultants.slice(consultantOffset, newConsultantOffset);
 
     // Build map between id and consultant
     const consultantMap = {};
@@ -378,13 +404,18 @@ class Roster extends React.Component {
       loading: false,
       entryList: [...entryList, ...newEntryList],
       projectAssignments: [...projectAssignments, ...newProjectAssignments],
-      consultantOffset: consultantOffset + 10,
-      consultants: [...consultants, ...newConsultants],
+      consultantOffset: newConsultantOffset,
     });
+    this.isLoading = false;
+
+    this.gridRef.recomputeGridSize();
+    if (newConsultantOffset < this.highestRowIndex) {
+      this.loadData();
+    }
   };
 
   reloadConsultantData = async consultant_id => {
-    this.setState({ loading: true });
+    // this.setState({ loading: true });
     const { startDate, endDate, consultants } = this.state;
 
     const rosterEntries = await this.props.$models.RosterEntry.findAll({
@@ -416,7 +447,7 @@ class Roster extends React.Component {
   };
 
   render() {
-    const { loading, costCenter, entryList } = this.state;
+    const { loading, consultantCount, costCenter, entryList } = this.state;
     if (loading) {
       return <ActivityIndicator style={{ flex: 1 }} />;
     }
@@ -437,9 +468,12 @@ class Roster extends React.Component {
               fixedRowCount={1}
               cellRenderer={this.cellRenderer}
               columnCount={entryList[0].length}
-              columnWidth={80}
-              rowCount={entryList.length}
+              columnWidth={120}
+              rowCount={consultantCount}
               rowHeight={30}
+              ref={ref => {
+                this.gridRef = ref;
+              }}
             />
           )}
         </AutoSizer>
