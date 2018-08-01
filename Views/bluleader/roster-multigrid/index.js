@@ -23,6 +23,7 @@ class Roster extends React.Component {
     consultants: [],
     consultantCount: 0,
     consultantOffset: 0,
+    mode: 'small',
   };
 
   highestRowIndex = 0;
@@ -37,7 +38,7 @@ class Roster extends React.Component {
     // Insert date array at first
     const dateArray = datesToArray(startDate, endDate).map(date => {
       let labelFormat = 'DD';
-      if (date.date() === 1) labelFormat = 'MMM DD';
+      if (date.day() === 1) labelFormat = 'MMM DD';
 
       return {
         formattedDate: date.format(labelFormat),
@@ -117,6 +118,8 @@ class Roster extends React.Component {
     });
   };
 
+  setDisplayMode = mode => this.setState({ mode }, () => this.gridRef.recomputeGridSize());
+
   getListItemLayout = (_data, index) => ({
     length: 34,
     offset: 34 * index,
@@ -124,7 +127,7 @@ class Roster extends React.Component {
   });
 
   cellRenderer = ({ columnIndex, key, rowIndex, style }) => {
-    const { entryList } = this.state;
+    const { entryList, mode } = this.state;
 
     if (rowIndex > this.highestRowIndex) {
       this.highestRowIndex = rowIndex;
@@ -135,11 +138,12 @@ class Roster extends React.Component {
     const entry = entryList[rowIndex] && entryList[rowIndex][columnIndex];
 
     let backgroundColor = '#f8f8f8';
+    let label;
 
     if (rowIndex === 0) {
       // Render date label cell
       let color = 'black';
-      if (entry.isWeekend) color = 'grey';
+      if (entry.isWeekend) color = 'lightgrey';
       return (
         <Label key={key} style={style} backgroundColor={backgroundColor} color={color}>
           <div>{entry.weekday}</div>
@@ -153,7 +157,10 @@ class Roster extends React.Component {
       return (
         <ClickLabel
           key={key}
-          style={style}
+          style={{
+            ...style,
+            width: 120,
+          }}
           backgroundColor={backgroundColor}
           onClick={() => this.handleClickConsultant(entry)}
         >
@@ -163,10 +170,11 @@ class Roster extends React.Component {
     }
 
     // Render roster entry cell
-    if (entry && entry.probability) {
+    if (entry) {
       backgroundColor = entry.probability.backgroundColor;
+      label = mode === 'large' ? entry.project.name : entry.project.key || entry.project.name;
+      if (mode === 'small' && label.length > 3) label = label.slice(0, 3);
     }
-    const projectName = entry && entry.project && entry.project.name;
 
     return (
       <Cell
@@ -175,7 +183,7 @@ class Roster extends React.Component {
         backgroundColor={backgroundColor}
         onPress={() => this.openEntryForm(rowIndex, columnIndex, entry)}
       >
-        {projectName}
+        {label}
       </Cell>
     );
   };
@@ -360,42 +368,54 @@ class Roster extends React.Component {
       consultantMap[c.id] = c;
     });
 
-    const newProjectAssignments = await ProjectAssignment.findAll({
-      where: {
-        consultant_id: {
-          $in: newConsultants.map(c => c.id),
+    const promises = [];
+
+    // Fetch Project Assignments
+    promises.push(
+      ProjectAssignment.findAll({
+        where: {
+          consultant_id: {
+            $in: newConsultants.map(c => c.id),
+          },
         },
-      },
-      include: [{ as: 'project' }],
-      limit: 1000,
-    });
+        include: [{ as: 'project' }],
+        limit: 1000,
+      }),
+    );
 
-    const rosterEntries = await RosterEntry.findAll({
-      where: {
-        date: {
-          $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
+    // Fetch roster entries
+    promises.push(
+      RosterEntry.findAll({
+        where: {
+          date: {
+            $between: [startDate.format(dateFormat), endDate.format(dateFormat)],
+          },
+          consultant_id: {
+            $in: newConsultants.map(c => c.id),
+          },
         },
-        consultant_id: {
-          $in: newConsultants.map(c => c.id),
-        },
-      },
-      include: [{ as: 'project' }, { as: 'probability' }],
-      limit: 1000,
-    });
+        include: [{ as: 'project' }, { as: 'probability' }],
+        limit: 1000,
+      }).then(rosterEntries => {
+        const tempMap = {};
 
-    const tempMap = {};
+        rosterEntries.forEach(entry => {
+          if (!tempMap[entry.consultant_id]) tempMap[entry.consultant_id] = [];
+          const entryIndex = moment(entry.date).diff(startDate, 'days');
+          tempMap[entry.consultant_id][entryIndex] = entry;
+        });
 
-    rosterEntries.forEach(entry => {
-      if (!tempMap[entry.consultant_id]) tempMap[entry.consultant_id] = [];
-      const entryIndex = moment(entry.date).diff(startDate, 'days');
-      tempMap[entry.consultant_id][entryIndex] = entry;
-    });
+        // Insert consultant name at first of roster entry array
+        const newEntryList = Object.entries(tempMap).map(([key, value]) => {
+          const consultant = consultantMap[key];
+          return [consultant, ...value];
+        });
 
-    // Insert consultant name at first of roster entry array
-    const newEntryList = Object.entries(tempMap).map(([key, value]) => {
-      const consultant = consultantMap[key];
-      return [consultant, ...value];
-    });
+        return newEntryList;
+      }),
+    );
+
+    const [newProjectAssignments, newEntryList] = await Promise.all(promises);
 
     this.setState({
       loading: false,
@@ -446,16 +466,25 @@ class Roster extends React.Component {
   };
 
   render() {
-    const { loading, consultantCount, costCenter, entryList } = this.state;
+    const { loading, consultantCount, costCenter, entryList, mode } = this.state;
     if (loading) {
       return <ActivityIndicator style={{ flex: 1 }} />;
     }
 
+    const columnWidth = mode === 'small' ? 45 : 120;
+
     return (
       <Container>
         <HeaderContainer>
-          <Heading>Cost center: {(costCenter && costCenter.name) || 'all'}</Heading>
-          <TextButton onPress={this.setFilters}>change</TextButton>
+          <HeaderSubContainer>
+            <Heading>Cost center: {(costCenter && costCenter.name) || 'all'}</Heading>
+            <TextButton onPress={this.setFilters}>change</TextButton>
+          </HeaderSubContainer>
+          <HeaderSubContainer>
+            <Heading>Cell size:</Heading>
+            <TextButton onPress={() => this.setDisplayMode('large')}>large</TextButton>
+            <TextButton onPress={() => this.setDisplayMode('small')}>small</TextButton>
+          </HeaderSubContainer>
         </HeaderContainer>
         <AutoSizer>
           {({ height, width }) => (
@@ -466,9 +495,13 @@ class Roster extends React.Component {
               fixedRowCount={1}
               cellRenderer={this.cellRenderer}
               columnCount={entryList[0].length}
-              columnWidth={120}
+              columnWidth={columnWidth}
               rowCount={consultantCount}
-              rowHeight={30}
+              rowHeight={45}
+              styleTopLeftGrid={leftGridStyle}
+              styleBottomLeftGrid={leftGridStyle}
+              styleTopRightGrid={mode === 'small' && rightGridStyle}
+              styleBottomRightGrid={mode === 'small' && rightGridStyle}
               ref={ref => {
                 this.gridRef = ref;
               }}
@@ -482,25 +515,38 @@ class Roster extends React.Component {
 
 export default Roster;
 
+const leftGridStyle = {
+  width: 120,
+};
+
+const rightGridStyle = {
+  marginLeft: 75,
+};
+
 const Container = styled(View)`
   flex: 1;
   flex-direction: column;
 `;
 
-const HeaderContainer = styled(View)`
+const HeaderContainer = styled.div`
+  display: flex;
   flex-direction: row;
+  justify-content: space-between;
   align-items: center;
   margin: 20px;
 `;
 
+const HeaderSubContainer = styled.div`
+  display: flex;
+`;
+
 const Heading = styled(Text)`
   font-size: 18px;
-  margin-right: 15px;
 `;
 
 const TextButton = styled(Button)`
   color: grey;
-  margin-right: 20px;
+  margin-left: 10px;
 `;
 
 const baseStyle = `
